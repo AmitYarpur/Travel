@@ -79,11 +79,25 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Rubik, Arial, sans-serif;
 }
 
+body {
+  display: flex;
+  justify-content: center;
+}
+
 button, input, select, textarea { font-family: inherit; }
 
+/* Phone-shaped viewport: on an actual phone this is already narrower than
+   480px, so nothing changes there. On a wider desktop browser it keeps the
+   whole touch-sized UI (bottom nav, sheets, chips) from stretching edge to
+   edge and looking oversized - it renders as a centered phone-width column
+   instead. */
 .app {
-  position: fixed;
-  inset: 0;
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  height: 100%;
+  overflow: hidden;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.25);
 }
 
 #map {
