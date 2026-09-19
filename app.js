@@ -1,0 +1,732 @@
+import {
+  PLACE_CATEGORIES,
+  geocode,
+  addLocation, getLocations, deleteLocation,
+  addPlace, getPlacesByLocation, deletePlace,
+  addTrip, getTripsByLocation, updateTrip, deleteTrip
+} from "./db.js";
+
+const $ = sel => document.querySelector(sel);
+
+const CATEGORY_EMOJI = {
+  "מסעדה": "🍽️",
+  "אתר תיירות": "🏛️",
+  "תצפית": "🔭",
+  "קניות": "🛍️",
+  "אחר": "📍"
+};
+const WEEKDAYS_HE = ["יום א׳", "יום ב׳", "יום ג׳", "יום ד׳", "יום ה׳", "יום ו׳", "שבת"];
+
+function escapeHtml(str) {
+  return String(str || "").replace(/[&<>"']/g, ch => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[ch]));
+}
+
+function toDateInputValue(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatDateHe(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d)) return dateStr;
+  return d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+// ---------------------------------------------------------------------------
+// App state
+// ---------------------------------------------------------------------------
+
+const state = {
+  locations: [],
+  selectedLocationId: localStorage.getItem("travel_selected_location") || null,
+  places: [],
+  trips: [],
+  activePlaceCategory: "all",
+  currentTrip: null // deep-cloned trip being edited in the detail view
+};
+
+// ---------------------------------------------------------------------------
+// Toast
+// ---------------------------------------------------------------------------
+
+let toastTimer;
+function toast(message) {
+  const el = $("#toast");
+  el.textContent = message;
+  el.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("visible"), 2400);
+}
+
+// ---------------------------------------------------------------------------
+// Theme toggle
+// ---------------------------------------------------------------------------
+
+$("#theme-toggle-btn").addEventListener("click", () => {
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  if (isDark) {
+    document.documentElement.removeAttribute("data-theme");
+    localStorage.setItem("travel_theme", "light");
+  } else {
+    document.documentElement.setAttribute("data-theme", "dark");
+    localStorage.setItem("travel_theme", "dark");
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Map
+// ---------------------------------------------------------------------------
+
+const map = L.map("map", { zoomControl: true, attributionControl: true }).setView([46, 10], 4);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: "&copy; OpenStreetMap contributors"
+}).addTo(map);
+
+const placeMarkersLayer = L.layerGroup().addTo(map);
+const placeMarkerById = new Map();
+
+let userMarker = null;
+let locationMarker = null;
+
+function emojiIcon(emoji, size) {
+  return L.divIcon({
+    html: `<div class="marker-emoji" style="font-size:${size || 26}px">${emoji}</div>`,
+    className: "",
+    iconSize: [size || 26, size || 26],
+    iconAnchor: [(size || 26) / 2, size || 26]
+  });
+}
+
+function locateMe(fly) {
+  if (!("geolocation" in navigator)) return;
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const latlng = [pos.coords.latitude, pos.coords.longitude];
+      if (!userMarker) {
+        userMarker = L.marker(latlng, {
+          icon: L.divIcon({ html: '<div class="marker-user"></div>', className: "", iconSize: [18, 18] }),
+          zIndexOffset: 500
+        }).addTo(map);
+      } else {
+        userMarker.setLatLng(latlng);
+      }
+      if (fly) map.flyTo(latlng, 13);
+      else if (!state.selectedLocationId) map.setView(latlng, 12);
+    },
+    () => { if (fly) toast("לא ניתן לאתר את המיקום שלכם"); },
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+}
+
+$("#locate-btn").addEventListener("click", () => locateMe(true));
+
+// ---------------------------------------------------------------------------
+// Sheets: generic open/close/view-switch plumbing
+// ---------------------------------------------------------------------------
+
+const SHEETS = {
+  locations: {
+    el: $("#locations-sheet"),
+    title: $("#locations-title"),
+    defaultTitle: "מיקומים",
+    backBtn: $("#locations-back-btn"),
+    addBtn: $("#locations-add-btn"),
+    closeBtn: $("#locations-close-btn"),
+    navBtn: $("#nav-locations-btn"),
+    views: { list: $("#locations-list-view"), form: $("#location-form-view") },
+    currentView: "list"
+  },
+  places: {
+    el: $("#places-sheet"),
+    title: $("#places-title"),
+    defaultTitle: "מקומות",
+    backBtn: $("#places-back-btn"),
+    addBtn: $("#places-add-btn"),
+    closeBtn: $("#places-close-btn"),
+    navBtn: $("#nav-places-btn"),
+    views: { list: $("#places-list-view"), form: $("#place-form-view") },
+    currentView: "list"
+  },
+  trips: {
+    el: $("#trips-sheet"),
+    title: $("#trips-title"),
+    defaultTitle: "תכנון טיול",
+    backBtn: $("#trips-back-btn"),
+    addBtn: $("#trips-add-btn"),
+    closeBtn: $("#trips-close-btn"),
+    navBtn: $("#nav-trips-btn"),
+    views: { list: $("#trips-list-view"), form: $("#trip-form-view"), detail: $("#trip-detail-view") },
+    currentView: "list"
+  }
+};
+
+function showView(key, viewName, title) {
+  const s = SHEETS[key];
+  Object.entries(s.views).forEach(([name, el]) => el.classList.toggle("hidden", name !== viewName));
+  s.currentView = viewName;
+  s.title.textContent = title || s.defaultTitle;
+  s.backBtn.classList.toggle("hidden", viewName === "list");
+  s.addBtn.classList.toggle("hidden", viewName !== "list");
+}
+
+function closeSheet(key) {
+  SHEETS[key].el.classList.remove("open");
+  SHEETS[key].navBtn.classList.remove("active");
+  if (!Object.values(SHEETS).some(s => s.el.classList.contains("open"))) {
+    $("#sheet-backdrop").classList.remove("visible");
+  }
+}
+
+function closeAllSheets() {
+  Object.keys(SHEETS).forEach(closeSheet);
+}
+
+function openSheet(key) {
+  Object.keys(SHEETS).forEach(k => { if (k !== key) closeSheet(k); });
+  const s = SHEETS[key];
+  s.el.classList.add("open");
+  s.navBtn.classList.add("active");
+  $("#sheet-backdrop").classList.add("visible");
+  showView(key, "list");
+  if (key === "locations") renderLocationsList();
+  if (key === "places") refreshPlacesView();
+  if (key === "trips") refreshTripsView();
+}
+
+function toggleSheet(key) {
+  if (SHEETS[key].el.classList.contains("open")) closeSheet(key);
+  else openSheet(key);
+}
+
+Object.entries(SHEETS).forEach(([key, s]) => {
+  s.navBtn.addEventListener("click", () => toggleSheet(key));
+  s.closeBtn.addEventListener("click", () => closeSheet(key));
+});
+
+$("#sheet-backdrop").addEventListener("click", closeAllSheets);
+
+$("#current-location-chip").addEventListener("click", () => openSheet("locations"));
+
+$("#locations-back-btn").addEventListener("click", () => showView("locations", "list"));
+$("#places-back-btn").addEventListener("click", () => showView("places", "list"));
+$("#trips-back-btn").addEventListener("click", async () => {
+  if (SHEETS.trips.currentView === "detail") {
+    await saveCurrentTrip(true);
+  }
+  showView("trips", "list");
+  renderTripsList();
+});
+
+// ---------------------------------------------------------------------------
+// Locations
+// ---------------------------------------------------------------------------
+
+function renderLocationsList() {
+  const list = $("#locations-list");
+  list.innerHTML = "";
+  $("#locations-empty").classList.toggle("hidden", state.locations.length > 0);
+
+  state.locations.forEach(loc => {
+    const card = document.createElement("div");
+    card.className = "item-card" + (loc.id === state.selectedLocationId ? " selected" : "");
+    card.innerHTML = `
+      <div class="item-icon">📍</div>
+      <div class="item-text">
+        <p class="item-title">${escapeHtml(loc.name)}</p>
+        <p class="item-subtitle">${escapeHtml(loc.country)}</p>
+      </div>
+      <button class="icon-btn-ghost danger" aria-label="מחיקה" data-action="delete">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+      </button>
+    `;
+    card.addEventListener("click", e => {
+      if (e.target.closest('[data-action="delete"]')) return;
+      selectLocation(loc.id);
+      closeSheet("locations");
+    });
+    card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
+      if (!confirm(`למחוק את "${loc.name}"?`)) return;
+      try {
+        await deleteLocation(loc.id);
+        if (state.selectedLocationId === loc.id) {
+          state.selectedLocationId = null;
+          localStorage.removeItem("travel_selected_location");
+          $("#current-location-chip").textContent = "בחרו מיקום";
+          $("#current-location-chip").classList.remove("is-set");
+          if (locationMarker) { map.removeLayer(locationMarker); locationMarker = null; }
+          state.places = [];
+          state.trips = [];
+          renderPlaceMarkers();
+        }
+        await loadLocations();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    list.appendChild(card);
+  });
+}
+
+async function loadLocations() {
+  state.locations = await getLocations();
+  renderLocationsList();
+}
+
+async function selectLocation(id, opts) {
+  opts = opts || {};
+  const loc = state.locations.find(l => l.id === id);
+  if (!loc) return;
+
+  state.selectedLocationId = id;
+  localStorage.setItem("travel_selected_location", id);
+
+  const chip = $("#current-location-chip");
+  chip.textContent = `📍 ${loc.name}, ${loc.country}`;
+  chip.classList.add("is-set");
+
+  if (!locationMarker) {
+    locationMarker = L.marker([loc.lat, loc.lng], { icon: emojiIcon("📌", 30), zIndexOffset: 400 }).addTo(map);
+  } else {
+    locationMarker.setLatLng([loc.lat, loc.lng]);
+  }
+  locationMarker.bindPopup(`<b>${escapeHtml(loc.name)}</b><br>${escapeHtml(loc.country)}`);
+
+  if (!opts.skipFly) map.flyTo([loc.lat, loc.lng], 12);
+
+  renderLocationsList();
+
+  try {
+    state.places = await getPlacesByLocation(id);
+  } catch (err) {
+    state.places = [];
+    toast(err.message);
+  }
+  renderPlaceMarkers();
+  if (SHEETS.places.el.classList.contains("open")) refreshPlacesView();
+
+  try {
+    state.trips = await getTripsByLocation(id);
+  } catch (err) {
+    state.trips = [];
+    toast(err.message);
+  }
+  if (SHEETS.trips.el.classList.contains("open")) refreshTripsView();
+}
+
+$("#locations-add-btn").addEventListener("click", () => {
+  $("#location-form-error").classList.add("hidden");
+  $("#location-name-input").value = "";
+  $("#location-country-input").value = "";
+  showView("locations", "form", "מיקום חדש");
+});
+
+$("#location-form-view").addEventListener("submit", async e => {
+  e.preventDefault();
+  const errorEl = $("#location-form-error");
+  errorEl.classList.add("hidden");
+  const name = $("#location-name-input").value.trim();
+  const country = $("#location-country-input").value.trim();
+  const submitBtn = $("#location-form-submit");
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "מאתר במפה...";
+  try {
+    const geo = await geocode(`${name}, ${country}`);
+    if (!geo) throw new Error("לא נמצא מיקום מתאים. נסו שם מדויק יותר.");
+    const id = await addLocation({ name, country, lat: geo.lat, lng: geo.lng });
+    await loadLocations();
+    await selectLocation(id);
+    showView("locations", "list");
+    closeSheet("locations");
+    toast("המיקום נוסף!");
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.remove("hidden");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "הוספת מיקום";
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Places
+// ---------------------------------------------------------------------------
+
+function renderPlaceMarkers() {
+  placeMarkersLayer.clearLayers();
+  placeMarkerById.clear();
+  state.places.forEach(p => {
+    const marker = L.marker([p.lat, p.lng], { icon: emojiIcon(CATEGORY_EMOJI[p.category] || "📍") });
+    marker.bindPopup(
+      `<b>${escapeHtml(p.name)}</b><br>${escapeHtml(p.category)}` +
+      (p.notes ? `<br>${escapeHtml(p.notes)}` : "")
+    );
+    marker.addTo(placeMarkersLayer);
+    placeMarkerById.set(p.id, marker);
+  });
+}
+
+function renderPlaceCategoryFilter() {
+  const row = $("#places-category-filter");
+  row.innerHTML = "";
+  const options = [{ key: "all", label: "הכל", emoji: "🗺️" }].concat(
+    PLACE_CATEGORIES.map(c => ({ key: c, label: c, emoji: CATEGORY_EMOJI[c] }))
+  );
+  options.forEach(opt => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip" + (state.activePlaceCategory === opt.key ? " active" : "");
+    chip.textContent = `${opt.emoji} ${opt.label}`;
+    chip.addEventListener("click", () => {
+      state.activePlaceCategory = opt.key;
+      renderPlaceCategoryFilter();
+      renderPlacesList();
+    });
+    row.appendChild(chip);
+  });
+}
+
+function renderPlacesList() {
+  const list = $("#places-list");
+  list.innerHTML = "";
+  const filtered = state.activePlaceCategory === "all"
+    ? state.places
+    : state.places.filter(p => p.category === state.activePlaceCategory);
+
+  $("#places-empty").classList.toggle("hidden", filtered.length > 0);
+
+  filtered.forEach(p => {
+    const card = document.createElement("div");
+    card.className = "item-card";
+    card.innerHTML = `
+      <div class="item-icon">${CATEGORY_EMOJI[p.category] || "📍"}</div>
+      <div class="item-text">
+        <p class="item-title">${escapeHtml(p.name)}</p>
+        <p class="item-subtitle">${escapeHtml(p.notes || p.category)}</p>
+      </div>
+      <button class="icon-btn-ghost danger" aria-label="מחיקה" data-action="delete">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+      </button>
+    `;
+    card.addEventListener("click", e => {
+      if (e.target.closest('[data-action="delete"]')) return;
+      map.flyTo([p.lat, p.lng], 16);
+      const marker = placeMarkerById.get(p.id);
+      if (marker) setTimeout(() => marker.openPopup(), 400);
+      closeSheet("places");
+    });
+    card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
+      if (!confirm(`למחוק את "${p.name}"?`)) return;
+      try {
+        await deletePlace(p.id);
+        state.places = state.places.filter(x => x.id !== p.id);
+        renderPlaceMarkers();
+        renderPlacesList();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    list.appendChild(card);
+  });
+}
+
+function refreshPlacesView() {
+  const hasLocation = !!state.selectedLocationId;
+  $("#places-no-location").classList.toggle("hidden", hasLocation);
+  $("#places-content").classList.toggle("hidden", !hasLocation);
+  $("#places-add-btn").disabled = !hasLocation;
+  if (hasLocation) {
+    renderPlaceCategoryFilter();
+    renderPlacesList();
+  }
+}
+
+$("#places-go-to-locations-btn").addEventListener("click", () => openSheet("locations"));
+
+$("#places-add-btn").addEventListener("click", () => {
+  if (!state.selectedLocationId) return;
+  $("#place-form-error").classList.add("hidden");
+  $("#place-name-input").value = "";
+  $("#place-search-input").value = "";
+  $("#place-notes-input").value = "";
+  buildPlaceCategoryPicker();
+  showView("places", "form", "מקום חדש");
+});
+
+function buildPlaceCategoryPicker() {
+  const picker = $("#place-category-picker");
+  picker.innerHTML = "";
+  let selected = null;
+  PLACE_CATEGORIES.forEach(cat => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip";
+    chip.textContent = `${CATEGORY_EMOJI[cat]} ${cat}`;
+    chip.dataset.category = cat;
+    chip.addEventListener("click", () => {
+      picker.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+    });
+    picker.appendChild(chip);
+  });
+}
+
+$("#place-form-view").addEventListener("submit", async e => {
+  e.preventDefault();
+  const errorEl = $("#place-form-error");
+  errorEl.classList.add("hidden");
+
+  const activeChip = $("#place-category-picker .chip.active");
+  const category = activeChip ? activeChip.dataset.category : null;
+  const name = $("#place-name-input").value.trim();
+  const searchText = $("#place-search-input").value.trim();
+  const notes = $("#place-notes-input").value.trim();
+  const loc = state.locations.find(l => l.id === state.selectedLocationId);
+  const submitBtn = $("#place-form-submit");
+
+  if (!category) {
+    errorEl.textContent = "נא לבחור קטגוריה.";
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "מאתר במפה...";
+  try {
+    const query = `${searchText || name}, ${loc.name}, ${loc.country}`;
+    const geo = await geocode(query);
+    if (!geo) throw new Error("לא נמצא מקום מתאים. נסו טקסט חיפוש מדויק יותר.");
+    await addPlace({ locationId: loc.id, name, category, lat: geo.lat, lng: geo.lng, notes });
+    state.places = await getPlacesByLocation(loc.id);
+    renderPlaceMarkers();
+    refreshPlacesView();
+    showView("places", "list");
+    toast("המקום נוסף!");
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.remove("hidden");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "הוספת מקום";
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Trip planning
+// ---------------------------------------------------------------------------
+
+function tripDateRangeLabel(trip) {
+  if (!trip.days.length) return "אין ימים עדיין";
+  const first = formatDateHe(trip.days[0].date);
+  const last = formatDateHe(trip.days[trip.days.length - 1].date);
+  return `${first} - ${last} · ${trip.days.length} ימים`;
+}
+
+function renderTripsList() {
+  const list = $("#trips-list");
+  list.innerHTML = "";
+  $("#trips-empty").classList.toggle("hidden", state.trips.length > 0);
+
+  state.trips.forEach(trip => {
+    const card = document.createElement("div");
+    card.className = "item-card";
+    card.innerHTML = `
+      <div class="item-icon">🗓️</div>
+      <div class="item-text">
+        <p class="item-title">${escapeHtml(trip.name)}</p>
+        <p class="item-subtitle">${escapeHtml(tripDateRangeLabel(trip))}</p>
+      </div>
+      <span class="item-chevron">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+      </span>
+    `;
+    card.addEventListener("click", () => openTripDetail(trip));
+    list.appendChild(card);
+  });
+}
+
+function refreshTripsView() {
+  const hasLocation = !!state.selectedLocationId;
+  $("#trips-no-location").classList.toggle("hidden", hasLocation);
+  $("#trips-content").classList.toggle("hidden", !hasLocation);
+  $("#trips-add-btn").disabled = !hasLocation;
+  if (hasLocation) renderTripsList();
+}
+
+$("#trips-go-to-locations-btn").addEventListener("click", () => openSheet("locations"));
+
+$("#trips-add-btn").addEventListener("click", () => {
+  if (!state.selectedLocationId) return;
+  $("#trip-form-error").classList.add("hidden");
+  $("#trip-name-input").value = "";
+  $("#trip-start-date-input").value = toDateInputValue(new Date());
+  $("#trip-days-input").value = 3;
+  showView("trips", "form", "טיול חדש");
+});
+
+$("#trip-form-view").addEventListener("submit", async e => {
+  e.preventDefault();
+  const errorEl = $("#trip-form-error");
+  errorEl.classList.add("hidden");
+
+  const name = $("#trip-name-input").value.trim();
+  const startDateStr = $("#trip-start-date-input").value;
+  const numDays = parseInt($("#trip-days-input").value, 10);
+  const submitBtn = $("#trip-form-submit");
+
+  if (!startDateStr || !numDays || numDays < 1) {
+    errorEl.textContent = "נא למלא תאריך התחלה ומספר ימים תקין.";
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  const days = [];
+  const startDate = new Date(startDateStr + "T00:00:00");
+  for (let i = 0; i < numDays; i++) {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + i);
+    days.push({
+      date: toDateInputValue(d),
+      dayLabel: WEEKDAYS_HE[d.getDay()],
+      morning: "",
+      afternoon: "",
+      evening: "",
+      logistics: ""
+    });
+  }
+
+  submitBtn.disabled = true;
+  try {
+    const id = await addTrip({ locationId: state.selectedLocationId, name, days });
+    state.trips = await getTripsByLocation(state.selectedLocationId);
+    const trip = state.trips.find(t => t.id === id);
+    openTripDetail(trip);
+    toast("התוכנית נוצרה, אפשר למלא פרטים");
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.remove("hidden");
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+function renderTripTable(days) {
+  const body = $("#trip-table-body");
+  body.innerHTML = "";
+  days.forEach((day, idx) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td class="col-date"><input type="date" data-field="date" value="${escapeHtml(day.date)}"></td>
+      <td class="col-day"><input type="text" data-field="dayLabel" value="${escapeHtml(day.dayLabel)}"></td>
+      <td class="col-part"><textarea data-field="morning">${escapeHtml(day.morning)}</textarea></td>
+      <td class="col-part"><textarea data-field="afternoon">${escapeHtml(day.afternoon)}</textarea></td>
+      <td class="col-part"><textarea data-field="evening">${escapeHtml(day.evening)}</textarea></td>
+      <td class="col-logistics"><textarea data-field="logistics">${escapeHtml(day.logistics)}</textarea></td>
+      <td class="col-remove">
+        <button type="button" class="icon-btn-ghost danger" data-action="remove-day" aria-label="הסרת יום">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </td>
+    `;
+    row.querySelector('[data-action="remove-day"]').addEventListener("click", () => {
+      syncTableIntoCurrentTrip();
+      state.currentTrip.days.splice(idx, 1);
+      renderTripTable(state.currentTrip.days);
+    });
+    body.appendChild(row);
+  });
+}
+
+function syncTableIntoCurrentTrip() {
+  if (!state.currentTrip) return;
+  const rows = $("#trip-table-body").querySelectorAll("tr");
+  rows.forEach((row, idx) => {
+    const day = state.currentTrip.days[idx];
+    if (!day) return;
+    row.querySelectorAll("[data-field]").forEach(input => {
+      day[input.dataset.field] = input.value;
+    });
+  });
+  state.currentTrip.name = $("#trip-detail-name-input").value.trim();
+}
+
+function openTripDetail(trip) {
+  state.currentTrip = JSON.parse(JSON.stringify(trip));
+  $("#trip-detail-name-input").value = trip.name;
+  renderTripTable(state.currentTrip.days);
+  showView("trips", "detail", "פרטי טיול");
+}
+
+$("#trip-add-day-btn").addEventListener("click", () => {
+  syncTableIntoCurrentTrip();
+  const days = state.currentTrip.days;
+  const last = days[days.length - 1];
+  const nextDate = last ? new Date(last.date + "T00:00:00") : new Date();
+  if (last) nextDate.setDate(nextDate.getDate() + 1);
+  days.push({
+    date: toDateInputValue(nextDate),
+    dayLabel: WEEKDAYS_HE[nextDate.getDay()],
+    morning: "",
+    afternoon: "",
+    evening: "",
+    logistics: ""
+  });
+  renderTripTable(days);
+});
+
+async function saveCurrentTrip(silent) {
+  if (!state.currentTrip) return;
+  syncTableIntoCurrentTrip();
+  try {
+    await updateTrip(state.currentTrip.id, { name: state.currentTrip.name, days: state.currentTrip.days });
+    state.trips = await getTripsByLocation(state.selectedLocationId);
+    if (!silent) toast("נשמר בהצלחה!");
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+$("#trip-save-btn").addEventListener("click", () => saveCurrentTrip(false));
+
+$("#trip-delete-btn").addEventListener("click", async () => {
+  if (!state.currentTrip) return;
+  if (!confirm(`למחוק את "${state.currentTrip.name}"?`)) return;
+  try {
+    await deleteTrip(state.currentTrip.id);
+    state.trips = state.trips.filter(t => t.id !== state.currentTrip.id);
+    state.currentTrip = null;
+    showView("trips", "list");
+    renderTripsList();
+    toast("הטיול נמחק");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+
+(async function init() {
+  locateMe(false);
+  try {
+    state.locations = await getLocations();
+  } catch (err) {
+    toast(err.message);
+    state.locations = [];
+  }
+  renderLocationsList();
+
+  if (state.selectedLocationId && state.locations.some(l => l.id === state.selectedLocationId)) {
+    await selectLocation(state.selectedLocationId, { skipFly: false });
+  } else {
+    state.selectedLocationId = null;
+    localStorage.removeItem("travel_selected_location");
+  }
+})();

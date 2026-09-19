@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Shared, no-login travel planner: every visitor reads the same data and
+    // can add/edit/remove it (same "no accounts" model as the Recipe app).
+    // Field checks below just stop malformed/oversized documents, not
+    // malicious ones - there is no per-user identity to check against.
+
+    match /locations/{locationId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.name.size() < 100
+                    && request.resource.data.country is string
+                    && request.resource.data.country.size() > 0
+                    && request.resource.data.country.size() < 100
+                    && request.resource.data.lat is number
+                    && request.resource.data.lng is number;
+      allow delete: if true;
+    }
+
+    match /places/{placeId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.locationId is string
+                    && request.resource.data.locationId.size() > 0
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.name.size() < 200
+                    && request.resource.data.category in
+                       ['מסעדה', 'אתר תיירות', 'תצפית', 'קניות', 'אחר']
+                    && request.resource.data.lat is number
+                    && request.resource.data.lng is number;
+      allow delete: if true;
+    }
+
+    match /trips/{tripId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.locationId is string
+                    && request.resource.data.locationId.size() > 0
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.name.size() < 200
+                    && request.resource.data.days is list
+                    && request.resource.data.days.size() <= 60;
+      allow delete: if true;
+    }
+  }
+}

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1f7a6c">
+<link rel="icon" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Travel">
+<title>Travel</title>
+<script>
+  if (localStorage.getItem('travel_theme') === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+</script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div class="app">
+
+    <div id="map"></div>
+
+    <div class="top-bar">
+      <div class="brand">
+        <span class="brand-icon">🌍</span>
+      </div>
+      <button class="current-location-chip" id="current-location-chip" type="button">בחרו מיקום</button>
+      <button class="icon-btn" id="theme-toggle-btn" aria-label="החלף מצב תצוגה">
+        <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg>
+      </button>
+      <button class="icon-btn" id="locate-btn" aria-label="המיקום שלי">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+      </button>
+    </div>
+
+    <nav class="bottom-nav">
+      <button class="nav-btn" id="nav-locations-btn" type="button" data-sheet="locations-sheet">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span>מיקומים</span>
+      </button>
+      <button class="nav-btn" id="nav-places-btn" type="button" data-sheet="places-sheet">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3l-6.1 3.3 1.4-6.8-5.1-4.7 6.9-.8Z"/></svg>
+        <span>מקומות</span>
+      </button>
+      <button class="nav-btn" id="nav-trips-btn" type="button" data-sheet="trips-sheet">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9.5h18M8 3v3M16 3v3"/><path d="M8 14h2M14 14h2M8 17.5h2"/></svg>
+        <span>תכנון טיול</span>
+      </button>
+    </nav>
+
+    <div class="sheet-backdrop" id="sheet-backdrop"></div>
+
+    <!-- ===================== LOCATIONS SHEET ===================== -->
+    <div class="sheet" id="locations-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="icon-btn hidden" id="locations-back-btn" aria-label="חזרה">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <h2 id="locations-title">מיקומים</h2>
+        <button class="add-btn" id="locations-add-btn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          הוספה
+        </button>
+        <button class="icon-btn" id="locations-close-btn" aria-label="סגירה">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="sheet-body" id="locations-list-view">
+        <div id="locations-list" class="item-list"></div>
+        <div id="locations-empty" class="empty-hint hidden">עדיין אין מיקומים שמורים.<br>הוסיפו יעד ראשון, למשל קרקוב או רומא.</div>
+      </div>
+
+      <form class="sheet-body hidden" id="location-form-view">
+        <div class="form-error hidden" id="location-form-error"></div>
+        <div class="field">
+          <label for="location-name-input">עיר</label>
+          <input type="text" id="location-name-input" placeholder="למשל קרקוב" required>
+        </div>
+        <div class="field">
+          <label for="location-country-input">מדינה</label>
+          <input type="text" id="location-country-input" placeholder="למשל פולין" required>
+          <div class="field-hint">נאתר עבורכם את המיקום המדויק על המפה אוטומטית.</div>
+        </div>
+        <button type="submit" class="primary-btn" id="location-form-submit">הוספת מיקום</button>
+      </form>
+    </div>
+
+    <!-- ===================== PLACES SHEET ===================== -->
+    <div class="sheet" id="places-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="icon-btn hidden" id="places-back-btn" aria-label="חזרה">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <h2 id="places-title">מקומות</h2>
+        <button class="add-btn" id="places-add-btn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          הוספה
+        </button>
+        <button class="icon-btn" id="places-close-btn" aria-label="סגירה">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="sheet-body" id="places-list-view">
+        <div id="places-no-location" class="empty-hint hidden">
+          בחרו קודם מיקום כדי לראות ולהוסיף מקומות.
+          <button class="hint-action" id="places-go-to-locations-btn" type="button">מעבר לבחירת מיקום</button>
+        </div>
+        <div id="places-content">
+          <div class="chip-row" id="places-category-filter"></div>
+          <div id="places-list" class="item-list"></div>
+          <div id="places-empty" class="empty-hint hidden">אין עדיין מקומות ליעד הזה. הוסיפו מסעדה, אתר תיירות או תצפית.</div>
+        </div>
+      </div>
+
+      <form class="sheet-body hidden" id="place-form-view">
+        <div class="form-error hidden" id="place-form-error"></div>
+        <div class="field">
+          <label>קטגוריה</label>
+          <div class="category-picker" id="place-category-picker"></div>
+        </div>
+        <div class="field">
+          <label for="place-name-input">שם המקום</label>
+          <input type="text" id="place-name-input" placeholder="למשל מסעדת ויאדוק" required>
+        </div>
+        <div class="field">
+          <label for="place-search-input">חיפוש במפה</label>
+          <input type="text" id="place-search-input" placeholder="שם + עיר, לדוגמה: מגדל דוד, ירושלים">
+          <div class="field-hint">נשתמש בטקסט הזה כדי לאתר את המקום ליד היעד שנבחר.</div>
+        </div>
+        <div class="field">
+          <label for="place-notes-input">הערות (לא חובה)</label>
+          <textarea id="place-notes-input" placeholder="שעות פתיחה, המלצות, קישור..."></textarea>
+        </div>
+        <button type="submit" class="primary-btn" id="place-form-submit">הוספת מקום</button>
+      </form>
+    </div>
+
+    <!-- ===================== TRIP PLANNING SHEET ===================== -->
+    <div class="sheet" id="trips-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <button class="icon-btn hidden" id="trips-back-btn" aria-label="חזרה">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <h2 id="trips-title">תכנון טיול</h2>
+        <button class="add-btn" id="trips-add-btn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          הוספה
+        </button>
+        <button class="icon-btn" id="trips-close-btn" aria-label="סגירה">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="sheet-body" id="trips-list-view">
+        <div id="trips-no-location" class="empty-hint hidden">
+          בחרו קודם מיקום כדי לראות ולתכנן טיולים.
+          <button class="hint-action" id="trips-go-to-locations-btn" type="button">מעבר לבחירת מיקום</button>
+        </div>
+        <div id="trips-content">
+          <div id="trips-list" class="item-list"></div>
+          <div id="trips-empty" class="empty-hint hidden">אין עדיין תוכנית טיול ליעד הזה.</div>
+        </div>
+      </div>
+
+      <form class="sheet-body hidden" id="trip-form-view">
+        <div class="form-error hidden" id="trip-form-error"></div>
+        <div class="field">
+          <label for="trip-name-input">סוג / שם הטיול</label>
+          <input type="text" id="trip-name-input" placeholder="למשל טיול משפחתי" required>
+        </div>
+        <div class="form-row-2">
+          <div class="field">
+            <label for="trip-start-date-input">תאריך התחלה</label>
+            <input type="date" id="trip-start-date-input" required>
+          </div>
+          <div class="field">
+            <label for="trip-days-input">מספר ימים</label>
+            <input type="number" id="trip-days-input" min="1" max="30" value="3" required>
+          </div>
+        </div>
+        <button type="submit" class="primary-btn" id="trip-form-submit">יצירת תוכנית</button>
+      </form>
+
+      <div class="sheet-body hidden" id="trip-detail-view">
+        <div class="trip-detail-header">
+          <input type="text" id="trip-detail-name-input" placeholder="שם הטיול">
+          <button class="icon-btn-ghost danger" id="trip-delete-btn" aria-label="מחיקת טיול">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+          </button>
+        </div>
+        <div class="table-scroll">
+          <table class="trip-table">
+            <thead>
+              <tr>
+                <th>תאריך</th>
+                <th>יום</th>
+                <th>בוקר</th>
+                <th>צהריים</th>
+                <th>ערב</th>
+                <th>לוגיסטיקה</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="trip-table-body"></tbody>
+          </table>
+        </div>
+        <div class="trip-actions-row">
+          <button type="button" class="secondary-btn" id="trip-add-day-btn">+ הוספת יום</button>
+          <button type="button" class="primary-btn" id="trip-save-btn">שמירת שינויים</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
