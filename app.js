@@ -506,13 +506,13 @@ $("#places-add-btn").addEventListener("click", () => {
   if (!state.selectedLocationId) return;
   $("#place-form-error").classList.add("hidden");
   $("#place-name-input").value = "";
-  $("#place-search-input").value = "";
   $("#place-notes-input").value = "";
   selectedPlaceGeo = null;
   currentPlaceSuggestions = [];
   renderPlaceSuggestions([]);
   buildPlaceCategoryPicker();
   showView("places", "form", "מקום חדש");
+  $("#place-name-input").focus();
 });
 
 function buildPlaceCategoryPicker() {
@@ -551,15 +551,16 @@ function renderPlaceSuggestions(list) {
     row.className = "suggestion-item";
     row.innerHTML = `<span class="suggestion-emoji">📍</span><span>${escapeHtml(item.label)}</span>`;
     row.addEventListener("click", () => {
-      $("#place-search-input").value = item.label;
+      $("#place-name-input").value = item.name;
       selectedPlaceGeo = { lat: item.lat, lng: item.lng };
+      currentPlaceSuggestions = [];
       renderPlaceSuggestions([]);
     });
     box.appendChild(row);
   });
 }
 
-$("#place-search-input").addEventListener("input", e => {
+$("#place-name-input").addEventListener("input", e => {
   selectedPlaceGeo = null; // typing again invalidates a previously picked suggestion
   const value = e.target.value;
   clearTimeout(placeSearchDebounce);
@@ -590,7 +591,6 @@ $("#place-form-view").addEventListener("submit", async e => {
   const activeChip = $("#place-category-picker .chip.active");
   const category = activeChip ? activeChip.dataset.category : null;
   const name = $("#place-name-input").value.trim();
-  const searchText = $("#place-search-input").value.trim();
   const notes = $("#place-notes-input").value.trim();
   const loc = state.locations.find(l => l.id === state.selectedLocationId);
   const submitBtn = $("#place-form-submit");
@@ -606,8 +606,7 @@ $("#place-form-view").addEventListener("submit", async e => {
   try {
     let geo = selectedPlaceGeo;
     if (!geo) {
-      const query = `${searchText || name}, ${loc.name}, ${loc.country}`;
-      geo = await geocode(query);
+      geo = await geocode(`${name}, ${loc.name}, ${loc.country}`);
     }
     if (!geo) throw new Error("לא נמצא מקום מתאים. נסו טקסט חיפוש מדויק יותר.");
     await addPlace({ locationId: loc.id, name, category, lat: geo.lat, lng: geo.lng, notes });
