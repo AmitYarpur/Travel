@@ -171,6 +171,70 @@ export async function searchPlaceSuggestions(queryText, near, signal) {
   });
 }
 
+// Parses a pasted Google Maps link straight from its URL text - no network
+// request, so it works offline and needs no API key. Handles the common
+// share-link shapes:
+//   .../maps/place/<name>/@<lat>,<lng>,<zoom>z...   (name + viewport center)
+//   .../maps/place/<name>/data=...!3d<lat>!4d<lng>  (name + the exact pin,
+//                                                     preferred over @lat,lng
+//                                                     which is just where the
+//                                                     map happened to be
+//                                                     centered)
+//   .../maps/@<lat>,<lng>,<zoom>z                    (dropped pin, no name)
+//   .../maps?q=<lat>,<lng>  or  ?q=<free text name>
+// Returns null if the text isn't a Google Maps URL at all, { shortLink: true
+// } for goo.gl links (these redirect server-side, which can't be resolved
+// from a plain client-side fetch without a backend), or { name, lat, lng }
+// with whichever of those three this particular link actually contained.
+export function parseGoogleMapsLink(rawUrl) {
+  let url;
+  try {
+    url = new URL(rawUrl.trim());
+  } catch (e) {
+    return null;
+  }
+  const host = url.hostname.toLowerCase();
+
+  if (host.endsWith("goo.gl")) {
+    return { shortLink: true, name: null, lat: null, lng: null };
+  }
+  if (!host.includes("google.")) {
+    return null;
+  }
+
+  let lat = null, lng = null, name = null;
+
+  const pin = rawUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (pin) {
+    lat = parseFloat(pin[1]);
+    lng = parseFloat(pin[2]);
+  } else {
+    const view = rawUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+),/);
+    if (view) {
+      lat = parseFloat(view[1]);
+      lng = parseFloat(view[2]);
+    }
+  }
+
+  const placeMatch = url.pathname.match(/\/maps\/place\/([^/]+)/);
+  if (placeMatch) {
+    name = decodeURIComponent(placeMatch[1].replace(/\+/g, " "));
+  } else {
+    const q = url.searchParams.get("q");
+    if (q) {
+      const coordMatch = q.match(/^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/);
+      if (coordMatch && lat == null) {
+        lat = parseFloat(coordMatch[1]);
+        lng = parseFloat(coordMatch[2]);
+      } else if (!coordMatch) {
+        name = q;
+      }
+    }
+  }
+
+  return { shortLink: false, name, lat, lng };
+}
+
 // --- Locations --------------------------------------------------------------
 
 function locationsCollection() {

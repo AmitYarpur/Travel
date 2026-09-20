@@ -1,6 +1,6 @@
 import {
   PLACE_CATEGORIES,
-  geocode, searchLocationSuggestions, searchPlaceSuggestions,
+  geocode, searchLocationSuggestions, searchPlaceSuggestions, parseGoogleMapsLink,
   addLocation, getLocations, deleteLocation,
   addPlace, getPlacesByLocation, deletePlace,
   addTrip, getTripsByLocation, updateTrip, deleteTrip
@@ -561,9 +561,19 @@ function renderPlaceSuggestions(list) {
   });
 }
 
+// Pasting a Google Maps link into the same field is handled separately from
+// a normal text search - see handlePastedMapsLink below.
+function looksLikeUrl(value) {
+  return /^https?:\/\//i.test(value.trim());
+}
+
 $("#place-name-input").addEventListener("input", e => {
-  selectedPlaceGeo = null; // typing again invalidates a previously picked suggestion
   const value = e.target.value;
+  if (looksLikeUrl(value)) {
+    handlePastedMapsLink(value.trim());
+    return;
+  }
+  selectedPlaceGeo = null; // typing again invalidates a previously picked suggestion/link
   clearTimeout(placeSearchDebounce);
   if (value.trim().length < 3) {
     currentPlaceSuggestions = [];
@@ -583,6 +593,47 @@ $("#place-name-input").addEventListener("input", e => {
     }
   }, 350);
 });
+
+// A pasted Google Maps link is parsed locally (no network call, no API key -
+// see parseGoogleMapsLink in db.js). When it carries exact coordinates we
+// set them directly and deliberately DON'T dispatch a synthetic "input"
+// event when filling in the suggested name, so the field-input listener
+// above never re-fires and clear them - the user can freely edit the
+// suggested name afterwards without losing the parsed location. When the
+// link only carries a name (e.g. a "?q=" text link, no coordinates), we do
+// dispatch one so the normal nearby-search runs to help resolve it.
+function handlePastedMapsLink(url) {
+  clearTimeout(placeSearchDebounce);
+  currentPlaceSuggestions = [];
+  renderPlaceSuggestions([]);
+  const errorEl = $("#place-form-error");
+  errorEl.classList.add("hidden");
+
+  const parsed = parseGoogleMapsLink(url);
+  if (!parsed) {
+    errorEl.textContent = "זה לא נראה כמו קישור Google Maps תקין.";
+    errorEl.classList.remove("hidden");
+    return;
+  }
+  if (parsed.shortLink) {
+    errorEl.textContent = "קישורים מקוצרים (maps.app.goo.gl) לא נתמכים - פתחו אותו בדפדפן והדביקו את הכתובת המלאה מסרגל הכתובת, או פשוט הקלידו את שם המקום.";
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  if (parsed.lat != null && parsed.lng != null) {
+    selectedPlaceGeo = { lat: parsed.lat, lng: parsed.lng };
+    if (parsed.name) $("#place-name-input").value = parsed.name;
+    toast("הקישור זוהה! אפשר לערוך את השם ולבחור קטגוריה.");
+  } else if (parsed.name) {
+    selectedPlaceGeo = null;
+    $("#place-name-input").value = parsed.name;
+    $("#place-name-input").dispatchEvent(new Event("input", { bubbles: true }));
+  } else {
+    errorEl.textContent = "לא הצלחנו לזהות מיקום מהקישור. נסו להעתיק את הקישור המלא מהדפדפן, או הקלידו את שם המקום.";
+    errorEl.classList.remove("hidden");
+  }
+}
 
 $("#place-form-view").addEventListener("submit", async e => {
   e.preventDefault();
