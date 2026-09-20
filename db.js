@@ -136,13 +136,26 @@ export async function searchPlaceSuggestions(queryText, near, signal) {
     near.lng + delta, near.lat - delta
   ].join(",");
 
-  const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&accept-language=he` +
-    `&viewbox=${viewbox}&bounded=1&q=${encodeURIComponent(trimmed)}`,
-    { signal, headers: { "Accept": "application/json" } }
-  );
-  if (!res.ok) return [];
-  const results = await res.json();
+  async function runQuery(q) {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&accept-language=he` +
+      `&viewbox=${viewbox}&bounded=1&q=${encodeURIComponent(q)}`,
+      { signal, headers: { "Accept": "application/json" } }
+    );
+    return res.ok ? res.json() : [];
+  }
+
+  let results = await runQuery(trimmed);
+
+  // The search is already scoped to the selected destination, but users
+  // naturally still type it (e.g. "M1 krakaw") - and unlike a single bad
+  // word, Nominatim finds nothing for the whole phrase if any one word
+  // doesn't match anything at all (a typo'd city name, most often). Retrying
+  // with the last word dropped recovers exactly that case.
+  const words = trimmed.split(/\s+/);
+  if (results.length === 0 && words.length > 1) {
+    results = await runQuery(words.slice(0, -1).join(" "));
+  }
 
   return results.map(r => {
     const addr = r.address || {};
