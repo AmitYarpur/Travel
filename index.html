@@ -131,8 +131,11 @@
         </div>
         <div class="field">
           <label for="place-search-input">חיפוש במפה</label>
-          <input type="text" id="place-search-input" placeholder="שם + עיר, לדוגמה: מגדל דוד, ירושלים">
-          <div class="field-hint">נשתמש בטקסט הזה כדי לאתר את המקום ליד היעד שנבחר.</div>
+          <div class="autosuggest-wrap">
+            <input type="text" id="place-search-input" placeholder="שם המקום, לדוגמה: מגדל דוד" autocomplete="off">
+            <div class="suggestions-list hidden" id="place-suggestions"></div>
+          </div>
+          <div class="field-hint">התחילו להקליד ובחרו מהרשימה, או השאירו טקסט חופשי לחיפוש בסיום.</div>
         </div>
         <div class="field">
           <label for="place-notes-input">הערות (לא חובה)</label>

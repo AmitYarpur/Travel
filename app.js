@@ -1,6 +1,6 @@
 import {
   PLACE_CATEGORIES,
-  geocode, searchLocationSuggestions,
+  geocode, searchLocationSuggestions, searchPlaceSuggestions,
   addLocation, getLocations, deleteLocation,
   addPlace, getPlacesByLocation, deletePlace,
   addTrip, getTripsByLocation, updateTrip, deleteTrip
@@ -508,6 +508,9 @@ $("#places-add-btn").addEventListener("click", () => {
   $("#place-name-input").value = "";
   $("#place-search-input").value = "";
   $("#place-notes-input").value = "";
+  selectedPlaceGeo = null;
+  currentPlaceSuggestions = [];
+  renderPlaceSuggestions([]);
   buildPlaceCategoryPicker();
   showView("places", "form", "מקום חדש");
 });
@@ -529,6 +532,55 @@ function buildPlaceCategoryPicker() {
     picker.appendChild(chip);
   });
 }
+
+// --- Place autosuggest: search-as-you-type, biased near the selected
+// destination so a common name matches locally instead of globally --------
+
+let selectedPlaceGeo = null;
+let currentPlaceSuggestions = [];
+let placeSearchDebounce;
+let placeSearchAbort;
+
+function renderPlaceSuggestions(list) {
+  const box = $("#place-suggestions");
+  box.innerHTML = "";
+  box.classList.toggle("hidden", list.length === 0);
+  list.forEach(item => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "suggestion-item";
+    row.innerHTML = `<span class="suggestion-emoji">📍</span><span>${escapeHtml(item.label)}</span>`;
+    row.addEventListener("click", () => {
+      $("#place-search-input").value = item.label;
+      selectedPlaceGeo = { lat: item.lat, lng: item.lng };
+      renderPlaceSuggestions([]);
+    });
+    box.appendChild(row);
+  });
+}
+
+$("#place-search-input").addEventListener("input", e => {
+  selectedPlaceGeo = null; // typing again invalidates a previously picked suggestion
+  const value = e.target.value;
+  clearTimeout(placeSearchDebounce);
+  if (value.trim().length < 3) {
+    currentPlaceSuggestions = [];
+    renderPlaceSuggestions([]);
+    return;
+  }
+  const loc = state.locations.find(l => l.id === state.selectedLocationId);
+  if (!loc) return;
+  placeSearchDebounce = setTimeout(async () => {
+    if (placeSearchAbort) placeSearchAbort.abort();
+    placeSearchAbort = new AbortController();
+    try {
+      currentPlaceSuggestions = await searchPlaceSuggestions(value, { lat: loc.lat, lng: loc.lng }, placeSearchAbort.signal);
+      renderPlaceSuggestions(currentPlaceSuggestions);
+    } catch (err) {
+      if (err.name !== "AbortError") renderPlaceSuggestions([]);
+    }
+  }, 350);
+});
 
 $("#place-form-view").addEventListener("submit", async e => {
   e.preventDefault();
@@ -552,8 +604,11 @@ $("#place-form-view").addEventListener("submit", async e => {
   submitBtn.disabled = true;
   submitBtn.textContent = "מאתר במפה...";
   try {
-    const query = `${searchText || name}, ${loc.name}, ${loc.country}`;
-    const geo = await geocode(query);
+    let geo = selectedPlaceGeo;
+    if (!geo) {
+      const query = `${searchText || name}, ${loc.name}, ${loc.country}`;
+      geo = await geocode(query);
+    }
     if (!geo) throw new Error("לא נמצא מקום מתאים. נסו טקסט חיפוש מדויק יותר.");
     await addPlace({ locationId: loc.id, name, category, lat: geo.lat, lng: geo.lng, notes });
     state.places = await getPlacesByLocation(loc.id);

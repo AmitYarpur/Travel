@@ -120,6 +120,44 @@ export async function searchLocationSuggestions(queryText, signal) {
   );
 }
 
+// Live autosuggest while typing a place's name, biased to a ~130km box
+// around `near` (the selected destination's coordinates) via Nominatim's
+// viewbox+bounded params - without that bias, a common name like "מגדל דוד"
+// or "פארק העיר" would just match whichever same-named place is most
+// globally important, usually nowhere near the trip. Returns up to 6
+// [{ name, lat, lng, label }].
+export async function searchPlaceSuggestions(queryText, near, signal) {
+  const trimmed = queryText.trim();
+  if (trimmed.length < 3) return [];
+
+  const delta = 0.6; // roughly +/-65km of latitude
+  const viewbox = [
+    near.lng - delta, near.lat + delta,
+    near.lng + delta, near.lat - delta
+  ].join(",");
+
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&accept-language=he` +
+    `&viewbox=${viewbox}&bounded=1&q=${encodeURIComponent(trimmed)}`,
+    { signal, headers: { "Accept": "application/json" } }
+  );
+  if (!res.ok) return [];
+  const results = await res.json();
+
+  return results.map(r => {
+    const addr = r.address || {};
+    const nameParts = r.display_name.split(",");
+    const name = nameParts[0].trim();
+    const area = addr.city || addr.town || addr.village || addr.suburb || nameParts[1]?.trim();
+    return {
+      name,
+      lat: parseFloat(r.lat),
+      lng: parseFloat(r.lon),
+      label: area && area !== name ? `${name}, ${area}` : name
+    };
+  });
+}
+
 // --- Locations --------------------------------------------------------------
 
 function locationsCollection() {
