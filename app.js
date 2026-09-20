@@ -48,7 +48,9 @@ const state = {
   places: [],
   trips: [],
   activePlaceCategory: "all",
-  currentTrip: null // deep-cloned trip being edited in the detail view
+  currentTrip: null, // deep-cloned trip being edited in the detail view
+  userPos: null, // { lat, lng } from the most recent geolocation fix
+  walkingInfo: {} // placeId -> { minutes, meters }, from OSRM's foot-routing table
 };
 
 // ---------------------------------------------------------------------------
@@ -109,6 +111,7 @@ function locateMe(fly) {
   navigator.geolocation.getCurrentPosition(
     pos => {
       const latlng = [pos.coords.latitude, pos.coords.longitude];
+      state.userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       if (!userMarker) {
         userMarker = L.marker(latlng, {
           icon: L.divIcon({ html: '<div class="marker-user"></div>', className: "", iconSize: [18, 18] }),
@@ -126,6 +129,67 @@ function locateMe(fly) {
 }
 
 $("#locate-btn").addEventListener("click", () => locateMe(true));
+
+// A fresh, awaitable GPS fix used before computing walking times - a
+// "כבר אותרתם" position from app load could be minutes/km stale by the time
+// someone opens the places list, so this always asks again rather than
+// reusing state.userPos as-is. Resolves to null (never rejects) on missing
+// permission/support/timeout, so callers can just skip the walking-time
+// feature silently instead of surfacing a geolocation error for what's a
+// nice-to-have.
+function getFreshPosition() {
+  return new Promise(resolve => {
+    if (!("geolocation" in navigator)) { resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  });
+}
+
+// Batch walking time+distance from the user's current position to every
+// place in the selected destination, in one request via OSRM's public
+// routing demo server (free, no API key - real street routing, not just
+// straight-line distance). Best-effort: any failure just leaves
+// state.walkingInfo empty rather than surfacing an error, since this is a
+// nice-to-have on top of the places list, not core functionality.
+async function computeWalkingTimes() {
+  if (!state.userPos || state.places.length === 0) {
+    state.walkingInfo = {};
+    return;
+  }
+  try {
+    const coords = [`${state.userPos.lng},${state.userPos.lat}`]
+      .concat(state.places.map(p => `${p.lng},${p.lat}`))
+      .join(";");
+    const destinations = state.places.map((_, i) => i + 1).join(";");
+    const res = await fetch(
+      `https://router.project-osrm.org/table/v1/foot/${coords}?sources=0&destinations=${destinations}&annotations=duration,distance`
+    );
+    if (!res.ok) { state.walkingInfo = {}; return; }
+    const data = await res.json();
+    const durations = (data.durations && data.durations[0]) || [];
+    const distances = (data.distances && data.distances[0]) || [];
+    const info = {};
+    state.places.forEach((p, i) => {
+      if (durations[i] != null && distances[i] != null) {
+        info[p.id] = { minutes: Math.round(durations[i] / 60), meters: distances[i] };
+      }
+    });
+    state.walkingInfo = info;
+  } catch (e) {
+    state.walkingInfo = {};
+  }
+}
+
+function formatWalkInfo(info) {
+  const distLabel = info.meters >= 1000
+    ? `${(info.meters / 1000).toFixed(1)} ק"מ`
+    : `${Math.round(info.meters / 10) * 10} מ'`;
+  const minutesLabel = info.minutes < 1 ? "פחות מדקה" : `${info.minutes} דק׳`;
+  return `🚶 ${minutesLabel} הליכה (${distLabel})`;
+}
 
 // ---------------------------------------------------------------------------
 // Sheets: generic open/close/view-switch plumbing
@@ -302,6 +366,7 @@ async function selectLocation(id, opts) {
 
   renderLocationsList();
 
+  state.walkingInfo = {}; // stale until updateWalkingTimes() recomputes for the new destination
   try {
     state.places = await getPlacesByLocation(id);
   } catch (err) {
@@ -463,6 +528,7 @@ function renderPlacesList() {
       <div class="item-text">
         <p class="item-title">${escapeHtml(p.name)}</p>
         <p class="item-subtitle">${escapeHtml(p.notes || p.category)}</p>
+        ${state.walkingInfo[p.id] ? `<p class="item-walk">${escapeHtml(formatWalkInfo(state.walkingInfo[p.id]))}</p>` : ""}
       </div>
       <button class="icon-btn-ghost danger" aria-label="מחיקה" data-action="delete">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
@@ -498,7 +564,22 @@ function refreshPlacesView() {
   if (hasLocation) {
     renderPlaceCategoryFilter();
     renderPlacesList();
+    updateWalkingTimes();
   }
+}
+
+// Refreshes GPS + walking times in the background and re-renders once ready,
+// so opening the sheet shows the list immediately and the walk badges pop in
+// a moment later rather than blocking on a GPS fix + a network round trip.
+let walkingTimesRequestId = 0;
+async function updateWalkingTimes() {
+  const requestId = ++walkingTimesRequestId;
+  const pos = await getFreshPosition();
+  if (requestId !== walkingTimesRequestId) return; // a newer refresh superseded this one
+  if (pos) state.userPos = pos;
+  await computeWalkingTimes();
+  if (requestId !== walkingTimesRequestId) return;
+  renderPlacesList();
 }
 
 $("#places-go-to-locations-btn").addEventListener("click", () => openSheet("locations"));

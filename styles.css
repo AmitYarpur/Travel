@@ -386,6 +386,13 @@ button, input, select, textarea { font-family: inherit; }
   white-space: nowrap;
 }
 
+.item-walk {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-1);
+}
+
 .item-chevron {
   color: var(--text-muted);
   flex-shrink: 0;
