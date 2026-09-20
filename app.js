@@ -57,6 +57,7 @@ const state = {
   places: [],
   trips: [],
   activePlaceCategory: "all",
+  locationFilterQuery: "",
   currentTrip: null, // deep-cloned trip being edited in the detail view
   userPos: null, // { lat, lng } from the most recent geolocation fix
   walkingInfo: {} // placeId -> { minutes, meters }, from OSRM's foot-routing table
@@ -344,7 +345,16 @@ function renderLocationsList() {
   list.innerHTML = "";
   $("#locations-empty").classList.toggle("hidden", state.locations.length > 0);
 
-  state.locations.forEach(loc => {
+  const query = state.locationFilterQuery.trim().toLowerCase();
+  const filtered = query
+    ? state.locations.filter(loc =>
+        loc.name.toLowerCase().includes(query) || loc.country.toLowerCase().includes(query)
+      )
+    : state.locations;
+
+  $("#locations-search-empty").classList.toggle("hidden", !(state.locations.length > 0 && query && filtered.length === 0));
+
+  filtered.forEach(loc => {
     const card = document.createElement("div");
     card.className = "item-card" + (loc.id === state.selectedLocationId ? " selected" : "");
     card.innerHTML = `
@@ -438,6 +448,11 @@ async function selectLocation(id, opts) {
   }
   if (SHEETS.trips.el.classList.contains("open")) refreshTripsView();
 }
+
+$("#locations-filter-input").addEventListener("input", e => {
+  state.locationFilterQuery = e.target.value;
+  renderLocationsList();
+});
 
 $("#locations-add-btn").addEventListener("click", () => {
   $("#location-form-error").classList.add("hidden");

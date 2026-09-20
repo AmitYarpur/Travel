@@ -332,6 +332,38 @@ button, input, select, textarea { font-family: inherit; }
   cursor: pointer;
 }
 
+/* --- Search row (filtering the locations list) --------------------------- */
+
+.search-row {
+  position: relative;
+  margin-bottom: 14px;
+}
+
+.search-row svg {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 13px 44px 13px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-hairline);
+  background: var(--field-bg);
+  color: var(--text-primary);
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+}
+
+.search-input:focus { border-color: var(--accent-1); }
+
 /* --- Item lists (locations / places / trips) --------------------------- */
 
 .item-list {

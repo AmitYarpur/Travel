@@ -73,8 +73,13 @@
       </div>
 
       <div class="sheet-body" id="locations-list-view">
+        <div class="search-row">
+          <input class="search-input" id="locations-filter-input" type="text" placeholder="חיפוש מיקום...">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        </div>
         <div id="locations-list" class="item-list"></div>
         <div id="locations-empty" class="empty-hint hidden">עדיין אין מיקומים שמורים.<br>הוסיפו יעד ראשון, למשל קרקוב או רומא.</div>
+        <div id="locations-search-empty" class="empty-hint hidden">לא נמצאו מיקומים תואמים.</div>
       </div>
 
       <form class="sheet-body hidden" id="location-form-view">
