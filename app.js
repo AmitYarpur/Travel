@@ -1,6 +1,6 @@
 import {
   PLACE_CATEGORIES,
-  geocode,
+  geocode, searchLocationSuggestions,
   addLocation, getLocations, deleteLocation,
   addPlace, getPlacesByLocation, deletePlace,
   addTrip, getTripsByLocation, updateTrip, deleteTrip
@@ -321,25 +321,38 @@ async function selectLocation(id, opts) {
 
 $("#locations-add-btn").addEventListener("click", () => {
   $("#location-form-error").classList.add("hidden");
-  $("#location-name-input").value = "";
-  $("#location-country-input").value = "";
+  $("#location-search-input").value = "";
+  currentLocationSuggestions = [];
+  renderLocationSuggestions([]);
   showView("locations", "form", "מיקום חדש");
+  $("#location-search-input").focus();
 });
 
-$("#location-form-view").addEventListener("submit", async e => {
-  e.preventDefault();
+// --- Location autosuggest: search-as-you-type against Nominatim ----------
+
+let currentLocationSuggestions = [];
+let locationSearchDebounce;
+let locationSearchAbort;
+
+function renderLocationSuggestions(list) {
+  const box = $("#location-suggestions");
+  box.innerHTML = "";
+  box.classList.toggle("hidden", list.length === 0);
+  list.forEach(item => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "suggestion-item";
+    row.innerHTML = `<span class="suggestion-emoji">📍</span><span>${escapeHtml(item.label)}</span>`;
+    row.addEventListener("click", () => addSuggestedLocation(item));
+    box.appendChild(row);
+  });
+}
+
+async function addSuggestedLocation(item) {
   const errorEl = $("#location-form-error");
   errorEl.classList.add("hidden");
-  const name = $("#location-name-input").value.trim();
-  const country = $("#location-country-input").value.trim();
-  const submitBtn = $("#location-form-submit");
-
-  submitBtn.disabled = true;
-  submitBtn.textContent = "מאתר במפה...";
   try {
-    const geo = await geocode(`${name}, ${country}`);
-    if (!geo) throw new Error("לא נמצא מיקום מתאים. נסו שם מדויק יותר.");
-    const id = await addLocation({ name, country, lat: geo.lat, lng: geo.lng });
+    const id = await addLocation({ name: item.name, country: item.country, lat: item.lat, lng: item.lng });
     await loadLocations();
     await selectLocation(id);
     showView("locations", "list");
@@ -348,9 +361,49 @@ $("#location-form-view").addEventListener("submit", async e => {
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.classList.remove("hidden");
-  } finally {
-    submitBtn.disabled = false;
-    submitBtn.textContent = "הוספת מיקום";
+  }
+}
+
+$("#location-search-input").addEventListener("input", e => {
+  const value = e.target.value;
+  clearTimeout(locationSearchDebounce);
+  if (value.trim().length < 3) {
+    currentLocationSuggestions = [];
+    renderLocationSuggestions([]);
+    return;
+  }
+  locationSearchDebounce = setTimeout(async () => {
+    if (locationSearchAbort) locationSearchAbort.abort();
+    locationSearchAbort = new AbortController();
+    try {
+      currentLocationSuggestions = await searchLocationSuggestions(value, locationSearchAbort.signal);
+      renderLocationSuggestions(currentLocationSuggestions);
+    } catch (err) {
+      if (err.name !== "AbortError") renderLocationSuggestions([]);
+    }
+  }, 350);
+});
+
+// Enter key (or any implicit form submit): fall back to the top current
+// suggestion, or run one last search if the debounce hasn't resolved yet.
+$("#location-form-view").addEventListener("submit", async e => {
+  e.preventDefault();
+  const errorEl = $("#location-form-error");
+  errorEl.classList.add("hidden");
+
+  if (currentLocationSuggestions.length > 0) {
+    await addSuggestedLocation(currentLocationSuggestions[0]);
+    return;
+  }
+  const value = $("#location-search-input").value.trim();
+  if (!value) return;
+  try {
+    const results = await searchLocationSuggestions(value);
+    if (results.length === 0) throw new Error("לא נמצא יעד מתאים. נסו שם מדויק יותר.");
+    await addSuggestedLocation(results[0]);
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.remove("hidden");
   }
 });
 

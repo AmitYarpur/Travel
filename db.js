@@ -83,6 +83,43 @@ export async function geocode(searchText) {
   }
 }
 
+// Live autosuggest while typing a destination (e.g. "Ro" -> "Rome, Italy").
+// Returns up to 6 [{ name, country, lat, lng, label }], ranked by
+// Nominatim's own importance/population ordering. `signal` lets the caller
+// abort a stale in-flight request when the user keeps typing; an abort
+// rejects with AbortError so the caller can tell "cancelled" apart from
+// "no results" instead of it silently returning [].
+export async function searchLocationSuggestions(queryText, signal) {
+  const trimmed = queryText.trim();
+  if (trimmed.length < 3) return []; // shorter prefixes mostly surface a country, not a city
+
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&accept-language=he&q=${encodeURIComponent(trimmed)}`,
+    { signal, headers: { "Accept": "application/json" } }
+  );
+  if (!res.ok) return [];
+  const results = await res.json();
+
+  const suggestions = results.map(r => {
+    const addr = r.address || {};
+    const nameParts = r.display_name.split(",");
+    const name = addr.city || addr.town || addr.village || addr.municipality || addr.county || nameParts[0].trim();
+    const country = addr.country || nameParts[nameParts.length - 1].trim();
+    return {
+      name,
+      country,
+      lat: parseFloat(r.lat),
+      lng: parseFloat(r.lon),
+      label: country && country !== name ? `${name}, ${country}` : name
+    };
+  });
+
+  // De-dupe same city/country appearing more than once in the raw results.
+  return suggestions.filter((s, i) =>
+    suggestions.findIndex(other => other.name === s.name && other.country === s.country) === i
+  );
+}
+
 // --- Locations --------------------------------------------------------------
 
 function locationsCollection() {

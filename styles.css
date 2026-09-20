@@ -476,6 +476,43 @@ button, input, select, textarea { font-family: inherit; }
 }
 .category-picker .chip { margin: 0; }
 
+/* --- Autosuggest dropdown (location search) ----------------------------- */
+
+.autosuggest-wrap {
+  position: relative;
+}
+
+.suggestions-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  background: var(--surface-solid);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 11px 13px;
+  font-size: 14px;
+  text-align: right;
+  cursor: pointer;
+}
+.suggestion-item + .suggestion-item { border-top: 1px solid var(--border-hairline); }
+.suggestion-item:active { background: var(--ghost-btn-bg-active); }
+.suggestion-item .suggestion-emoji { flex-shrink: 0; }
+
 .form-error {
   background: rgba(192, 83, 63, 0.12);
   color: var(--accent-danger);

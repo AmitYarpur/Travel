@@ -80,15 +80,13 @@
       <form class="sheet-body hidden" id="location-form-view">
         <div class="form-error hidden" id="location-form-error"></div>
         <div class="field">
-          <label for="location-name-input">עיר</label>
-          <input type="text" id="location-name-input" placeholder="למשל קרקוב" required>
+          <label for="location-search-input">עיר / יעד</label>
+          <div class="autosuggest-wrap">
+            <input type="text" id="location-search-input" placeholder="למשל רומא, קרקוב..." autocomplete="off">
+            <div class="suggestions-list hidden" id="location-suggestions"></div>
+          </div>
+          <div class="field-hint">התחילו להקליד ובחרו יעד מהרשימה.</div>
         </div>
-        <div class="field">
-          <label for="location-country-input">מדינה</label>
-          <input type="text" id="location-country-input" placeholder="למשל פולין" required>
-          <div class="field-hint">נאתר עבורכם את המיקום המדויק על המפה אוטומטית.</div>
-        </div>
-        <button type="submit" class="primary-btn" id="location-form-submit">הוספת מיקום</button>
       </form>
     </div>
 
