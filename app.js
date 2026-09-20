@@ -58,6 +58,7 @@ const state = {
   trips: [],
   activePlaceCategory: "all",
   locationFilterQuery: "",
+  placeFilterQuery: "",
   currentTrip: null, // deep-cloned trip being edited in the detail view
   userPos: null, // { lat, lng } from the most recent geolocation fix
   walkingInfo: {} // placeId -> { minutes, meters }, from OSRM's foot-routing table
@@ -583,11 +584,14 @@ function renderPlaceCategoryFilter() {
 function renderPlacesList() {
   const list = $("#places-list");
   list.innerHTML = "";
-  const filtered = state.activePlaceCategory === "all"
-    ? state.places
-    : state.places.filter(p => p.category === state.activePlaceCategory);
+  const query = state.placeFilterQuery.trim().toLowerCase();
 
-  $("#places-empty").classList.toggle("hidden", filtered.length > 0);
+  const filtered = state.places
+    .filter(p => state.activePlaceCategory === "all" || p.category === state.activePlaceCategory)
+    .filter(p => !query || p.name.toLowerCase().includes(query) || p.notes.toLowerCase().includes(query));
+
+  $("#places-empty").classList.toggle("hidden", state.places.length > 0);
+  $("#places-search-empty").classList.toggle("hidden", !(state.places.length > 0 && filtered.length === 0));
 
   filtered.forEach(p => {
     const card = document.createElement("div");
@@ -659,6 +663,11 @@ async function updateWalkingTimes() {
 }
 
 $("#places-go-to-locations-btn").addEventListener("click", () => openSheet("locations"));
+
+$("#places-filter-input").addEventListener("input", e => {
+  state.placeFilterQuery = e.target.value;
+  renderPlacesList();
+});
 
 $("#places-add-btn").addEventListener("click", () => {
   if (!state.selectedLocationId) return;

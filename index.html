@@ -118,9 +118,14 @@
           <button class="hint-action" id="places-go-to-locations-btn" type="button">מעבר לבחירת מיקום</button>
         </div>
         <div id="places-content">
+          <div class="search-row">
+            <input class="search-input" id="places-filter-input" type="text" placeholder="חיפוש מקום...">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          </div>
           <div class="chip-row" id="places-category-filter"></div>
           <div id="places-list" class="item-list"></div>
           <div id="places-empty" class="empty-hint hidden">אין עדיין מקומות ליעד הזה. הוסיפו מסעדה, אתר תיירות או תצפית.</div>
+          <div id="places-search-empty" class="empty-hint hidden">לא נמצאו מקומות תואמים.</div>
         </div>
       </div>
 
