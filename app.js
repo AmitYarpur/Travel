@@ -38,6 +38,15 @@ function formatDateHe(dateStr) {
   return d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+// Google's documented universal Maps URL (developers.google.com/maps/documentation/urls) -
+// no API key needed, opens the web site on desktop and deep-links straight
+// into the native Google Maps app on a phone.
+function googleMapsUrl(lat, lng) {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+}
+
+const OPEN_EXTERNAL_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>`;
+
 // ---------------------------------------------------------------------------
 // App state
 // ---------------------------------------------------------------------------
@@ -344,14 +353,20 @@ function renderLocationsList() {
         <p class="item-title">${escapeHtml(loc.name)}</p>
         <p class="item-subtitle">${escapeHtml(loc.country)}</p>
       </div>
+      <button class="icon-btn-ghost" aria-label="פתיחה ב-Google Maps" data-action="open-maps">
+        ${OPEN_EXTERNAL_ICON}
+      </button>
       <button class="icon-btn-ghost danger" aria-label="מחיקה" data-action="delete">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
       </button>
     `;
     card.addEventListener("click", e => {
-      if (e.target.closest('[data-action="delete"]')) return;
+      if (e.target.closest('[data-action="delete"]') || e.target.closest('[data-action="open-maps"]')) return;
       selectLocation(loc.id);
       closeSheet("locations");
+    });
+    card.querySelector('[data-action="open-maps"]').addEventListener("click", () => {
+      window.open(googleMapsUrl(loc.lat, loc.lng), "_blank", "noopener");
     });
     card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
       if (!confirm(`למחוק את "${loc.name}"?`)) return;
@@ -569,17 +584,23 @@ function renderPlacesList() {
         <p class="item-subtitle">${escapeHtml(p.notes || p.category)}</p>
         ${state.walkingInfo[p.id] ? `<p class="item-walk">${escapeHtml(formatWalkInfo(state.walkingInfo[p.id]))}</p>` : ""}
       </div>
+      <button class="icon-btn-ghost" aria-label="פתיחה ב-Google Maps" data-action="open-maps">
+        ${OPEN_EXTERNAL_ICON}
+      </button>
       <button class="icon-btn-ghost danger" aria-label="מחיקה" data-action="delete">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
       </button>
     `;
     card.addEventListener("click", e => {
-      if (e.target.closest('[data-action="delete"]')) return;
+      if (e.target.closest('[data-action="delete"]') || e.target.closest('[data-action="open-maps"]')) return;
       map.flyTo([p.lat, p.lng], 16);
       const marker = placeMarkerById.get(p.id);
       if (marker) setTimeout(() => marker.openPopup(), 400);
       closeSheet("places");
       drawWalkingRoute(p);
+    });
+    card.querySelector('[data-action="open-maps"]').addEventListener("click", () => {
+      window.open(googleMapsUrl(p.lat, p.lng), "_blank", "noopener");
     });
     card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
       if (!confirm(`למחוק את "${p.name}"?`)) return;
