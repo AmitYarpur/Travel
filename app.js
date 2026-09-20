@@ -96,6 +96,7 @@ const placeMarkerById = new Map();
 
 let userMarker = null;
 let locationMarker = null;
+let routeLayer = null;
 
 function emojiIcon(emoji, size) {
   return L.divIcon({
@@ -189,6 +190,43 @@ function formatWalkInfo(info) {
     : `${Math.round(info.meters / 10) * 10} מ'`;
   const minutesLabel = info.minutes < 1 ? "פחות מדקה" : `${info.minutes} דק׳`;
   return `🚶 ${minutesLabel} הליכה (${distLabel})`;
+}
+
+// Draws the actual walking path (not just a straight line) from a fresh GPS
+// fix to `place`, via the same free OSRM routing server used for the
+// walking-time badges - overview=full+geometries=geojson here asks it for
+// the route's full coordinate list instead of just duration/distance.
+// Replaces any previously drawn route. Best-effort: shows a toast instead of
+// drawing anything if GPS or the routing request fails.
+async function drawWalkingRoute(place) {
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+
+  const pos = await getFreshPosition();
+  if (!pos) { toast("לא ניתן לאתר את המיקום שלכם"); return; }
+  state.userPos = pos;
+
+  try {
+    const res = await fetch(
+      `https://router.project-osrm.org/route/v1/foot/${pos.lng},${pos.lat};${place.lng},${place.lat}?overview=full&geometries=geojson`
+    );
+    if (!res.ok) throw new Error("routing failed");
+    const data = await res.json();
+    const route = data.routes && data.routes[0];
+    if (!route) throw new Error("no route found");
+
+    const latlngs = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+    routeLayer = L.polyline(latlngs, {
+      color: "#1f7a6c",
+      weight: 5,
+      opacity: 0.85,
+      dashArray: "1,9",
+      lineCap: "round"
+    }).addTo(map);
+    map.fitBounds(routeLayer.getBounds(), { padding: [60, 60] });
+    toast(formatWalkInfo({ minutes: Math.round(route.duration / 60), meters: route.distance }));
+  } catch (e) {
+    toast("לא ניתן היה לחשב מסלול הליכה למקום הזה");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +405,7 @@ async function selectLocation(id, opts) {
   renderLocationsList();
 
   state.walkingInfo = {}; // stale until updateWalkingTimes() recomputes for the new destination
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   try {
     state.places = await getPlacesByLocation(id);
   } catch (err) {
@@ -540,6 +579,7 @@ function renderPlacesList() {
       const marker = placeMarkerById.get(p.id);
       if (marker) setTimeout(() => marker.openPopup(), 400);
       closeSheet("places");
+      drawWalkingRoute(p);
     });
     card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
       if (!confirm(`למחוק את "${p.name}"?`)) return;
