@@ -24,9 +24,14 @@ npx serve .
 
 ## פריסה לאינטרנט
 
-צרו ריפו ב-GitHub ופרסו ל-GitHub Pages (יש workflow מוכן תחת
-`.github/workflows/static.yml`) - כל push ל-`main` יעדכן את הגרסה החיה.
-GitHub Pages רץ תחת https, כך שה-GPS יעבוד כרגיל בטלפון.
+האפליקציה פרוסה ב-GitHub Pages בכתובת:
+
+**https://amityarpur.github.io/Travel/**
+
+הריפו: https://github.com/AmitYarpur/Travel - כל push ל-`main` מריץ את
+ה-workflow תחת `.github/workflows/static.yml` ומעדכן את הגרסה החיה תוך
+דקה-שתיים. GitHub Pages רץ תחת https, כך שה-GPS יעבוד כרגיל בטלפון -
+פתחו את הכתובת בטלפון והוסיפו למסך הבית כדי שתתנהג כמו אפליקציה.
 
 ## עדכון עתידי של חוקי ה-Firestore
 
