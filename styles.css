@@ -243,6 +243,7 @@ button, input, select, textarea { font-family: inherit; }
   position: absolute;
   right: 0; left: 0; bottom: 0;
   z-index: 700;
+  min-height: 50vh;
   max-height: 84vh;
   display: flex;
   flex-direction: column;
@@ -411,8 +412,8 @@ button, input, select, textarea { font-family: inherit; }
 
 .chip-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  overflow-x: auto;
   padding-bottom: 12px;
   margin-bottom: 4px;
 }
