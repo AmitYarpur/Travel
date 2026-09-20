@@ -37,7 +37,7 @@ if ("serviceWorker" in navigator) {
 }
 
 // Hebrew category list for places, shown in the add-place form and filters.
-export const PLACE_CATEGORIES = ["מסעדה", "אתר תיירות", "תצפית", "קניות", "אחר"];
+export const PLACE_CATEGORIES = ["מסעדה", "אתר תיירות", "תצפית", "קניות", "מלון", "אחר"];
 
 // A hung request (flaky mobile connection, or a socket a suspended PWA
 // silently lost) never rejects on its own - it just leaves the caller

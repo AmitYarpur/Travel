@@ -28,7 +28,7 @@ service cloud.firestore {
                     && request.resource.data.name.size() > 0
                     && request.resource.data.name.size() < 200
                     && request.resource.data.category in
-                       ['מסעדה', 'אתר תיירות', 'תצפית', 'קניות', 'אחר']
+                       ['מסעדה', 'אתר תיירות', 'תצפית', 'קניות', 'מלון', 'אחר']
                     && request.resource.data.lat is number
                     && request.resource.data.lng is number;
       allow delete: if true;
