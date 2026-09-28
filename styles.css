@@ -613,14 +613,19 @@ button, input, select, textarea { font-family: inherit; }
 }
 
 .table-scroll {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 58vh;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
   margin-bottom: 14px;
 }
 
 table.trip-table {
-  border-collapse: collapse;
+  /* separate (not collapse) - WebKit/Safari has long-standing bugs
+     rendering position:sticky cells correctly on a border-collapsed table,
+     and this table relies on sticky for the frozen header/column. */
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
   min-width: 780px;
 }
@@ -632,14 +637,30 @@ table.trip-table th {
   padding: 10px 8px;
   position: sticky;
   top: 0;
+  z-index: 3;
   white-space: nowrap;
+}
+/* Freeze the date column (first column, right-aligned in RTL) as well as
+   the header row, so both stay in view while scrolling a long/wide
+   itinerary - the header's own first cell needs both stickinesses at once
+   plus a higher z-index for the corner where they overlap. */
+table.trip-table th:first-child {
+  position: sticky;
+  right: 0;
+  z-index: 4;
 }
 table.trip-table td {
   border-top: 1px solid var(--border-hairline);
   padding: 6px;
   vertical-align: top;
 }
-table.trip-table td.col-date { min-width: 148px; }
+table.trip-table td.col-date {
+  min-width: 148px;
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--bg-1);
+}
 table.trip-table td.col-part { min-width: 150px; }
 table.trip-table td.col-logistics { min-width: 150px; }
 table.trip-table td.col-remove { width: 36px; }
@@ -653,8 +674,15 @@ table.trip-table textarea {
   border-radius: 8px;
   padding: 6px 7px;
   font-size: 13px;
-  resize: vertical;
   min-height: 34px;
+}
+/* Cells auto-grow to fit their full content (see autoGrowTextarea in
+   app.js) instead of clipping long text behind a scrollbar or a manual
+   resize handle - so resize is turned off here, it'd just fight the
+   auto-sizing. */
+table.trip-table textarea {
+  resize: none;
+  overflow: hidden;
 }
 table.trip-table input:focus,
 table.trip-table textarea:focus {

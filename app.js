@@ -1184,6 +1184,20 @@ $("#trip-form-view").addEventListener("submit", async e => {
 
 const ZOOM_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
 
+// Grows a table-cell textarea to fit its full content so nothing is ever
+// clipped behind a tiny scrollbar - called on every keystroke (delegated
+// "input" listener below) and once per cell right after rendering, since
+// pre-filled content (an existing trip, or an imported file) needs the same
+// sizing without waiting for the user to type first.
+function autoGrowTextarea(el) {
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+$("#trip-table-body").addEventListener("input", e => {
+  if (e.target.tagName === "TEXTAREA") autoGrowTextarea(e.target);
+});
+
 function partCell(field, value, label) {
   return `
     <td class="col-part part-cell">
@@ -1228,6 +1242,7 @@ function renderTripTable(days) {
       btn.addEventListener("click", () => openCellEditor(textarea, `${btn.dataset.zoomLabel} - ${day.dayLabel || day.date || ""}`));
     });
     body.appendChild(row);
+    row.querySelectorAll("textarea").forEach(autoGrowTextarea);
   });
 }
 
@@ -1247,6 +1262,7 @@ function openCellEditor(textarea, label) {
 function closeCellEditor() {
   if (cellEditorTarget) {
     cellEditorTarget.value = $("#cell-editor-textarea").value;
+    autoGrowTextarea(cellEditorTarget);
   }
   cellEditorTarget = null;
   $("#cell-editor").classList.remove("open");
