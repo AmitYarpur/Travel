@@ -1198,6 +1198,15 @@ $("#trip-table-body").addEventListener("input", e => {
   if (e.target.tagName === "TEXTAREA") autoGrowTextarea(e.target);
 });
 
+// A rotation or window resize changes column widths, which can make a
+// previously-set height wrong again the same way the initial-render race
+// could - re-measure everything once things settle.
+function reflowTripTable() {
+  $("#trip-table-body").querySelectorAll("textarea").forEach(autoGrowTextarea);
+}
+window.addEventListener("resize", reflowTripTable);
+window.addEventListener("orientationchange", () => setTimeout(reflowTripTable, 300));
+
 function partCell(field, value, label) {
   return `
     <td class="col-part part-cell">
@@ -1242,7 +1251,17 @@ function renderTripTable(days) {
       btn.addEventListener("click", () => openCellEditor(textarea, `${btn.dataset.zoomLabel} - ${day.dayLabel || day.date || ""}`));
     });
     body.appendChild(row);
-    row.querySelectorAll("textarea").forEach(autoGrowTextarea);
+  });
+
+  // Auto-grow only after every row is in the DOM, not per-row during the
+  // loop above: with table-layout:auto the browser picks column widths from
+  // ALL rows' content together, so measuring a textarea's scrollHeight
+  // before later rows (which may need a different width) are even added
+  // locks in a height based on a width that then shifts under it - exactly
+  // what caused text to look clipped despite auto-grow "running".
+  // requestAnimationFrame waits for that layout to settle first.
+  requestAnimationFrame(() => {
+    body.querySelectorAll("textarea").forEach(autoGrowTextarea);
   });
 }
 
