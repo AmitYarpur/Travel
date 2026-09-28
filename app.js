@@ -1135,6 +1135,31 @@ $("#trip-import-file-input").addEventListener("change", async e => {
   if (file) await handleTripImportFile(file);
 });
 
+// A quicker alternative to the guided "name + start date + day count" form:
+// just a name, and a handful of blank rows with no date filled in - for
+// when you want to freely fill in the table yourself rather than have it
+// pre-populated from a start date.
+const BLANK_TABLE_ROWS = 5;
+
+$("#trip-blank-table-btn").addEventListener("click", async () => {
+  if (!state.selectedLocationId) return;
+  const name = (prompt("שם לתוכנית הטיול:") || "").trim();
+  if (!name) return;
+
+  const days = Array.from({ length: BLANK_TABLE_ROWS }, () => ({
+    date: "", dayLabel: "", morning: "", afternoon: "", evening: "", logistics: ""
+  }));
+
+  try {
+    const id = await addTrip({ locationId: state.selectedLocationId, name, days });
+    state.trips = await getTripsByLocation(state.selectedLocationId);
+    openTripDetail(state.trips.find(t => t.id === id));
+    toast("הטבלה נוצרה - אפשר למלא תאריכים ותוכן");
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
 $("#trips-add-btn").addEventListener("click", () => {
   if (!state.selectedLocationId) return;
   $("#trip-form-error").classList.add("hidden");
@@ -1336,8 +1361,11 @@ $("#trip-add-day-btn").addEventListener("click", () => {
   syncTableIntoCurrentTrip();
   const days = state.currentTrip.days;
   const last = days[days.length - 1];
-  const nextDate = last ? new Date(last.date + "T00:00:00") : new Date();
-  if (last) nextDate.setDate(nextDate.getDate() + 1);
+  const lastDate = last && last.date ? new Date(`${last.date}T00:00:00`) : null;
+  // A blank table (see trip-blank-table-btn) has no date to increment from -
+  // falls back to today, same as adding the very first day.
+  const nextDate = lastDate && !isNaN(lastDate) ? lastDate : new Date();
+  if (lastDate && !isNaN(lastDate)) nextDate.setDate(nextDate.getDate() + 1);
   days.push({
     date: toDateInputValue(nextDate),
     dayLabel: WEEKDAYS_HE[nextDate.getDay()],

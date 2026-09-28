@@ -826,6 +826,11 @@ table.trip-table .cell-content:focus {
   display: flex;
   gap: 10px;
 }
+.trip-quick-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .secondary-btn {
   display: block;
   width: 100%;
