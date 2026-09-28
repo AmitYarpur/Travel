@@ -357,7 +357,7 @@ button, input, select, textarea { font-family: inherit; }
   border: 1px solid var(--border-hairline);
   background: var(--field-bg);
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 16px; /* see the .field input rule above for why not smaller */
   font-family: inherit;
   outline: none;
 }
@@ -506,7 +506,10 @@ button, input, select, textarea { font-family: inherit; }
   color: var(--text-primary);
   border-radius: var(--radius-sm);
   padding: 11px 13px;
-  font-size: 15px;
+  /* 16px, not smaller - iOS Safari auto-zooms the whole page on focus for
+     any input/textarea below that, which (now that pinch-zoom is enabled)
+     breaks the fixed-position sheet layout instead of just zooming text. */
+  font-size: 16px;
 }
 .field textarea { resize: vertical; min-height: 64px; }
 .field-hint {
@@ -673,7 +676,7 @@ table.trip-table textarea {
   color: var(--text-primary);
   border-radius: 8px;
   padding: 6px 7px;
-  font-size: 13px;
+  font-size: 16px; /* see the .field input rule above for why not smaller */
   min-height: 34px;
 }
 /* Cells auto-grow to fit their full content (see autoGrowTextarea in
@@ -701,7 +704,7 @@ table.trip-table textarea:focus {
   color: var(--accent-1);
 }
 .date-cell-stack input[data-field="dayLabel"] {
-  font-size: 12px;
+  font-size: 16px; /* see the .field input rule above for why not smaller */
   color: var(--text-secondary);
 }
 
@@ -775,7 +778,7 @@ table.trip-table textarea:focus {
   color: var(--text-primary);
   border-radius: var(--radius-md);
   padding: 12px;
-  font-size: 15px;
+  font-size: 16px; /* see the .field input rule above for why not smaller */
   font-family: inherit;
   resize: none;
   margin-bottom: 12px;
