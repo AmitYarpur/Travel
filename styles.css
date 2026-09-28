@@ -759,6 +759,8 @@ table.trip-table textarea:focus {
   gap: 10px;
 }
 .secondary-btn {
+  display: block;
+  width: 100%;
   flex: 1;
   border: 1px dashed var(--border-hairline);
   background: transparent;
@@ -768,6 +770,7 @@ table.trip-table textarea:focus {
   font-weight: 700;
   font-size: 14px;
   cursor: pointer;
+  margin-bottom: 12px;
 }
 
 /* --- Toast (lightweight status messages) --------------------------------- */

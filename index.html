@@ -174,6 +174,8 @@
           <button class="hint-action" id="trips-go-to-locations-btn" type="button">מעבר לבחירת מיקום</button>
         </div>
         <div id="trips-content">
+          <button type="button" class="secondary-btn" id="trip-import-btn">📄 ייבוא טבלה מקובץ (Excel / CSV / Word)</button>
+          <input type="file" id="trip-import-file-input" accept=".csv,.xlsx,.xls,.docx" class="hidden">
           <div id="trips-list" class="item-list"></div>
           <div id="trips-empty" class="empty-hint hidden">אין עדיין תוכנית טיול ליעד הזה.</div>
         </div>
@@ -246,6 +248,8 @@
   </div>
 
   <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

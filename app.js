@@ -964,6 +964,168 @@ function refreshTripsView() {
 
 $("#trips-go-to-locations-btn").addEventListener("click", () => openSheet("locations"));
 
+// --- Import a trip table from a file (CSV / Excel / Word) -----------------
+// Parses whichever format into a plain 2D grid of cell text, then maps
+// columns to our day fields (תאריך/בוקר/אחה"צ/ערב/לוגיסטיקה) by matching
+// header keywords, falling back to that same left-to-right column order
+// when no header is recognized. Legacy binary .doc isn't supported - it has
+// no practical client-side parser - so users are asked to re-save as
+// .docx/.xlsx/.csv instead, which covers every modern export path (Word,
+// Google Docs/Sheets, Excel all do this trivially via "Save As").
+
+const IMPORT_FIELD_KEYWORDS = {
+  date: ["תאריך", "date"],
+  morning: ["בוקר", "morning"],
+  afternoon: ["צהריים", "אחה", "afternoon"],
+  evening: ["ערב", "evening"],
+  logistics: ["לוגיסטיקה", "logistics", "הערות", "notes"]
+};
+const IMPORT_FIELD_ORDER = ["date", "morning", "afternoon", "evening", "logistics"];
+
+function detectImportColumns(headerRow) {
+  const mapping = {};
+  const used = new Set();
+  Object.entries(IMPORT_FIELD_KEYWORDS).forEach(([field, keywords]) => {
+    const idx = headerRow.findIndex((cell, i) =>
+      !used.has(i) && keywords.some(kw => String(cell || "").includes(kw))
+    );
+    if (idx !== -1) { mapping[field] = idx; used.add(idx); }
+  });
+  return mapping;
+}
+
+// Fills in any field the keyword pass didn't find using the next unused
+// column in canonical order - covers files with no recognizable header at
+// all (or a partial/garbled one), assuming the common authoring convention
+// of date/morning/afternoon/evening/logistics stored left-to-right.
+function fillImportColumnsFallback(mapping, totalCols) {
+  const used = new Set(Object.values(mapping));
+  let nextCol = 0;
+  IMPORT_FIELD_ORDER.forEach(field => {
+    if (mapping[field] != null) return;
+    while (used.has(nextCol) && nextCol < totalCols) nextCol++;
+    if (nextCol < totalCols) { mapping[field] = nextCol; used.add(nextCol); nextCol++; }
+  });
+  return mapping;
+}
+
+// Best-effort: tries ISO, D.M.Y / D/M/Y / D-M-Y, then falls back to
+// whatever the JS Date parser itself can make of it. Returns null (leaving
+// the cell blank for manual entry) rather than guessing wrong.
+function parseImportedDate(text) {
+  const t = (text || "").trim();
+  if (!t) return null;
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return toDateInputValue(new Date(+m[1], +m[2] - 1, +m[3]));
+  m = t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})/);
+  if (m) return toDateInputValue(new Date(+m[3], +m[2] - 1, +m[1]));
+  const parsed = new Date(t);
+  return isNaN(parsed) ? null : toDateInputValue(parsed);
+}
+
+// .xlsx/.xls are binary and self-describing, so reading them as raw bytes
+// works fine. .csv is plain text with no encoding metadata of its own -
+// reading it as bytes (type:"array") makes SheetJS guess a codepage, which
+// mangles anything outside ASCII (Hebrew included). Decoding it as text
+// first (browsers do this as UTF-8 by default, matching how the sheet was
+// almost certainly saved) and reading with type:"string" avoids that.
+function parseSpreadsheetToGrid(content, isCsv) {
+  const wb = XLSX.read(content, { type: isCsv ? "string" : "array" });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
+}
+
+// Reads the first table in a .docx's main document part. Multiple
+// paragraphs/runs within one cell are flattened into a single
+// space-joined line - real formatting is lost, but the text survives, and
+// the cell zoom editor makes it easy to reformat afterward if needed.
+async function parseDocxToGrid(arrayBuffer) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const docFile = zip.file("word/document.xml");
+  if (!docFile) throw new Error("קובץ Word לא תקין.");
+  const xmlText = await docFile.async("text");
+  const xml = new DOMParser().parseFromString(xmlText, "application/xml");
+  const ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const table = xml.getElementsByTagNameNS(ns, "tbl")[0];
+  if (!table) throw new Error("לא נמצאה טבלה בקובץ.");
+  return Array.from(table.getElementsByTagNameNS(ns, "tr")).map(tr =>
+    Array.from(tr.getElementsByTagNameNS(ns, "tc")).map(tc =>
+      Array.from(tc.getElementsByTagNameNS(ns, "t")).map(t => t.textContent).join(" ").trim()
+    )
+  );
+}
+
+async function handleTripImportFile(file) {
+  const lowerName = file.name.toLowerCase();
+  if (lowerName.endsWith(".doc") && !lowerName.endsWith(".docx")) {
+    toast("קובצי Word ישנים (.doc) אינם נתמכים. שמרו כ-.docx, .xlsx או .csv ונסו שוב.");
+    return;
+  }
+
+  let grid;
+  try {
+    if (lowerName.endsWith(".docx")) {
+      grid = await parseDocxToGrid(await file.arrayBuffer());
+    } else if (lowerName.endsWith(".csv")) {
+      grid = parseSpreadsheetToGrid(await file.text(), true);
+    } else {
+      grid = parseSpreadsheetToGrid(await file.arrayBuffer(), false);
+    }
+  } catch (err) {
+    toast(err.message || "קריאת הקובץ נכשלה.");
+    return;
+  }
+
+  grid = grid.filter(row => row.some(cell => String(cell || "").trim() !== ""));
+  if (grid.length === 0) { toast("הקובץ ריק."); return; }
+
+  const headerGuess = detectImportColumns(grid[0]);
+  const looksLikeHeader = Object.keys(headerGuess).length >= 2;
+  const mapping = fillImportColumnsFallback(looksLikeHeader ? headerGuess : {}, grid[0].length);
+  const dataRows = looksLikeHeader ? grid.slice(1) : grid;
+
+  const days = dataRows.map(row => {
+    const get = field => mapping[field] != null ? String(row[mapping[field]] || "").trim() : "";
+    const parsedDate = parseImportedDate(get("date"));
+    return {
+      date: parsedDate || "",
+      dayLabel: parsedDate ? WEEKDAYS_HE[new Date(parsedDate + "T00:00:00").getDay()] : "",
+      title: "",
+      morning: get("morning"),
+      afternoon: get("afternoon"),
+      evening: get("evening"),
+      logistics: get("logistics")
+    };
+  });
+
+  if (days.length === 0) { toast("לא נמצאו שורות לייבוא."); return; }
+
+  const defaultName = file.name.replace(/\.[^.]+$/, "");
+  const tripName = (prompt("שם לתוכנית המיובאת:", defaultName) || "").trim();
+  if (!tripName) return;
+
+  try {
+    const id = await addTrip({ locationId: state.selectedLocationId, name: tripName, days });
+    state.trips = await getTripsByLocation(state.selectedLocationId);
+    const trip = state.trips.find(t => t.id === id);
+    openTripDetail(trip);
+    toast("הטיול יובא! כדאי לבדוק ולערוך את הפרטים.");
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+$("#trip-import-btn").addEventListener("click", () => {
+  if (!state.selectedLocationId) return;
+  $("#trip-import-file-input").click();
+});
+
+$("#trip-import-file-input").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  e.target.value = ""; // allow re-selecting the same file name later
+  if (file) await handleTripImportFile(file);
+});
+
 $("#trips-add-btn").addEventListener("click", () => {
   if (!state.selectedLocationId) return;
   $("#trip-form-error").classList.add("hidden");
