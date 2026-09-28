@@ -3,7 +3,8 @@ import {
   geocode, searchLocationSuggestions, searchPlaceSuggestions, parseGoogleMapsLink,
   addLocation, getLocations, deleteLocation,
   addPlace, getPlacesByLocation, updatePlace, deletePlace,
-  addTrip, getTripsByLocation, updateTrip, deleteTrip
+  addTrip, getTripsByLocation, updateTrip, deleteTrip,
+  addCategory, getCategories
 } from "./db.js";
 
 const $ = sel => document.querySelector(sel);
@@ -16,6 +17,7 @@ const CATEGORY_EMOJI = {
   "מלון": "🏨",
   "אחר": "📍"
 };
+const CUSTOM_CATEGORY_EMOJI = "🏷️"; // fallback for any user-added category
 const WEEKDAYS_HE = ["יום א׳", "יום ב׳", "יום ג׳", "יום ד׳", "יום ה׳", "יום ו׳", "שבת"];
 
 function escapeHtml(str) {
@@ -59,10 +61,15 @@ const state = {
   activePlaceCategory: "all",
   locationFilterQuery: "",
   placeFilterQuery: "",
+  customCategories: [], // user-added categories on top of the PLACE_CATEGORIES built-ins
   currentTrip: null, // deep-cloned trip being edited in the detail view
   userPos: null, // { lat, lng } from the most recent geolocation fix
   walkingInfo: {} // placeId -> { minutes, meters }, from OSRM's foot-routing table
 };
+
+function allCategories() {
+  return PLACE_CATEGORIES.concat(state.customCategories);
+}
 
 // ---------------------------------------------------------------------------
 // Toast
@@ -551,7 +558,7 @@ function renderPlaceMarkers() {
   placeMarkersLayer.clearLayers();
   placeMarkerById.clear();
   state.places.forEach(p => {
-    const marker = L.marker([p.lat, p.lng], { icon: emojiIcon(CATEGORY_EMOJI[p.category] || "📍") });
+    const marker = L.marker([p.lat, p.lng], { icon: emojiIcon(CATEGORY_EMOJI[p.category] || CUSTOM_CATEGORY_EMOJI) });
     marker.bindPopup(
       `<b>${escapeHtml(p.name)}</b><br>${escapeHtml(p.category)}` +
       (p.notes ? `<br>${escapeHtml(p.notes)}` : "")
@@ -565,7 +572,7 @@ function renderPlaceCategoryFilter() {
   const row = $("#places-category-filter");
   row.innerHTML = "";
   const options = [{ key: "all", label: "הכל", emoji: "🗺️" }].concat(
-    PLACE_CATEGORIES.map(c => ({ key: c, label: c, emoji: CATEGORY_EMOJI[c] }))
+    allCategories().map(c => ({ key: c, label: c, emoji: CATEGORY_EMOJI[c] || CUSTOM_CATEGORY_EMOJI }))
   );
   options.forEach(opt => {
     const chip = document.createElement("button");
@@ -597,7 +604,7 @@ function renderPlacesList() {
     const card = document.createElement("div");
     card.className = "item-card";
     card.innerHTML = `
-      <div class="item-icon">${CATEGORY_EMOJI[p.category] || "📍"}</div>
+      <div class="item-icon">${CATEGORY_EMOJI[p.category] || CUSTOM_CATEGORY_EMOJI}</div>
       <div class="item-text">
         <p class="item-title">${escapeHtml(p.name)}</p>
         <p class="item-subtitle">${escapeHtml(p.notes || p.category)}</p>
@@ -709,11 +716,11 @@ function openEditPlaceForm(p) {
 function buildPlaceCategoryPicker(activeCategory) {
   const picker = $("#place-category-picker");
   picker.innerHTML = "";
-  PLACE_CATEGORIES.forEach(cat => {
+  allCategories().forEach(cat => {
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = "chip" + (cat === activeCategory ? " active" : "");
-    chip.textContent = `${CATEGORY_EMOJI[cat]} ${cat}`;
+    chip.textContent = `${CATEGORY_EMOJI[cat] || CUSTOM_CATEGORY_EMOJI} ${cat}`;
     chip.dataset.category = cat;
     chip.addEventListener("click", () => {
       picker.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
@@ -721,6 +728,34 @@ function buildPlaceCategoryPicker(activeCategory) {
     });
     picker.appendChild(chip);
   });
+
+  const addChip = document.createElement("button");
+  addChip.type = "button";
+  addChip.className = "chip chip-add";
+  addChip.textContent = "+ קטגוריה חדשה";
+  addChip.addEventListener("click", addCustomCategory);
+  picker.appendChild(addChip);
+}
+
+// Prompts for a new category name, saves it to Firestore (shared with
+// everyone, same as the rest of the app's data), and rebuilds the picker
+// with it selected - so adding one flows straight into using it.
+async function addCustomCategory() {
+  const name = (prompt("שם הקטגוריה החדשה:") || "").trim();
+  if (!name) return;
+  const exists = allCategories().some(c => c.toLowerCase() === name.toLowerCase());
+  if (exists) {
+    toast("הקטגוריה הזו כבר קיימת.");
+    return;
+  }
+  try {
+    await addCategory(name);
+    state.customCategories.push(name);
+    buildPlaceCategoryPicker(name);
+    renderPlaceCategoryFilter();
+  } catch (err) {
+    toast(err.message);
+  }
 }
 
 // --- Place autosuggest: search-as-you-type, biased near the selected
@@ -1076,6 +1111,12 @@ $("#trip-delete-btn").addEventListener("click", async () => {
     state.locations = [];
   }
   renderLocationsList();
+
+  try {
+    state.customCategories = await getCategories();
+  } catch (err) {
+    state.customCategories = []; // best-effort - the built-in categories still work fine without these
+  }
 
   if (state.selectedLocationId && state.locations.some(l => l.id === state.selectedLocationId)) {
     await selectLocation(state.selectedLocationId, { skipFly: false });

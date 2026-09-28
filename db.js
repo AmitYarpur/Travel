@@ -36,7 +36,10 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-// Hebrew category list for places, shown in the add-place form and filters.
+// Built-in Hebrew category list for places, shown in the add-place form and
+// filters. Users can add more of their own via addCategory/getCategories
+// below (stored in Firestore so they're shared and persist), which the UI
+// merges in alongside these defaults.
 export const PLACE_CATEGORIES = ["מסעדה", "אתר תיירות", "תצפית", "קניות", "מלון", "אחר"];
 
 // A hung request (flaky mobile connection, or a socket a suspended PWA
@@ -431,4 +434,35 @@ export async function updateTrip(id, values) {
 
 export async function deleteTrip(id) {
   await withTimeout(deleteDoc(doc(db, "trips", id)), "trip:delete");
+}
+
+// --- Custom place categories -----------------------------------------------
+// User-added categories on top of the PLACE_CATEGORIES built-ins, shared
+// across everyone using the app (same no-login model as everything else).
+
+function categoriesCollection() {
+  return collection(db, "categories");
+}
+
+export async function addCategory(name) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("נא להזין שם לקטגוריה.");
+  await withTimeout(addDoc(categoriesCollection(), {
+    name: trimmed,
+    createdAt: serverTimestamp(),
+    createdAtLocal: new Date().toString()
+  }), "category:add");
+}
+
+// Returns custom category names as a plain string array, in the order they
+// were added. Sorted client-side after a plain fetch (no orderBy) so this
+// never needs a Firestore composite index.
+export async function getCategories() {
+  const snap = await withTimeout(getDocs(categoriesCollection()), "category:list");
+  const docs = snap.docs.map(d => ({
+    name: d.data().name,
+    createdAt: d.data().createdAt ? d.data().createdAt.toDate() : new Date(d.data().createdAtLocal)
+  }));
+  docs.sort((a, b) => a.createdAt - b.createdAt);
+  return docs.map(d => d.name);
 }

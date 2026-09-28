@@ -27,11 +27,19 @@ service cloud.firestore {
                     && request.resource.data.name is string
                     && request.resource.data.name.size() > 0
                     && request.resource.data.name.size() < 200
-                    && request.resource.data.category in
-                       ['מסעדה', 'אתר תיירות', 'תצפית', 'קניות', 'מלון', 'אחר']
+                    && request.resource.data.category is string
+                    && request.resource.data.category.size() > 0
+                    && request.resource.data.category.size() < 50
                     && request.resource.data.lat is number
                     && request.resource.data.lng is number;
       allow delete: if true;
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create: if request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.name.size() < 50;
     }
 
     match /trips/{tripId} {

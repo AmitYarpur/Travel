@@ -477,6 +477,12 @@ button, input, select, textarea { font-family: inherit; }
   color: var(--text-on-accent);
 }
 
+.chip-add {
+  background: transparent;
+  border-style: dashed;
+  color: var(--accent-1);
+}
+
 /* --- Forms --------------------------------------------------------------- */
 
 .field {
