@@ -5,7 +5,7 @@
 // only makes the UI shell itself load fast and stay viewable if the
 // network briefly drops.
 
-const CACHE_NAME = 'travel-static-v3';
+const CACHE_NAME = 'travel-static-v4';
 
 const PRECACHE_URLS = [
   './',
@@ -24,7 +24,8 @@ const PRECACHE_URLS = [
   'vendor/leaflet/leaflet.js',
   'vendor/leaflet/leaflet.css',
   'vendor/xlsx.full.min.js',
-  'vendor/jszip.min.js'
+  'vendor/jszip.min.js',
+  'vendor/dompurify.min.js'
 ];
 
 self.addEventListener('install', event => {
