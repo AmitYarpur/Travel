@@ -109,6 +109,20 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors"
 }).addTo(map);
 
+// Leaflet measures its container once, at creation time. On iOS in
+// particular that can happen before Safari's chrome (address bar, PWA
+// splash) has finished settling into its final size, so the map silently
+// renders at the wrong size (often blank) until something tells it to
+// re-measure. invalidateSize() is that "re-measure" call - firing it after
+// a short delay on load, and again on resize/orientation/tab-foreground,
+// covers the cases that actually trigger this on phones.
+setTimeout(() => map.invalidateSize(), 300);
+window.addEventListener("resize", () => map.invalidateSize());
+window.addEventListener("orientationchange", () => setTimeout(() => map.invalidateSize(), 300));
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) map.invalidateSize();
+});
+
 const placeMarkersLayer = L.layerGroup().addTo(map);
 const placeMarkerById = new Map();
 

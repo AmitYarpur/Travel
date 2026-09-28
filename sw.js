@@ -5,7 +5,7 @@
 // only makes the UI shell itself load fast and stay viewable if the
 // network briefly drops.
 
-const CACHE_NAME = 'travel-static-v1';
+const CACHE_NAME = 'travel-static-v2';
 
 const PRECACHE_URLS = [
   './',
@@ -17,7 +17,12 @@ const PRECACHE_URLS = [
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/apple-touch-icon.png',
-  'icons/favicon.png'
+  'icons/favicon.png',
+  // Vendored locally (not loaded from a CDN) specifically so the map
+  // library itself is instantly available from cache instead of depending
+  // on a third-party host's speed/uptime - see index.html.
+  'vendor/leaflet/leaflet.js',
+  'vendor/leaflet/leaflet.css'
 ];
 
 self.addEventListener('install', event => {
