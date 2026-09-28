@@ -697,12 +697,11 @@ table.trip-table .cell-content:focus {
   flex-direction: column;
   gap: 3px;
 }
-.date-cell-stack input[data-field="title"] {
+.date-cell-daylabel {
+  margin: 0;
+  padding: 6px 7px 0;
+  font-size: 14px;
   font-weight: 700;
-  color: var(--accent-1);
-}
-.date-cell-stack input[data-field="dayLabel"] {
-  font-size: 16px; /* see the .field input rule above for why not smaller */
   color: var(--text-secondary);
 }
 

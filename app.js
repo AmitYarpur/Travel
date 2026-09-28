@@ -40,6 +40,12 @@ function formatDateHe(dateStr) {
   return d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+function dayLabelForDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  return isNaN(d) ? "" : WEEKDAYS_HE[d.getDay()];
+}
+
 // Google's documented universal Maps URL (developers.google.com/maps/documentation/urls) -
 // no API key needed, opens the web site on desktop and deep-links straight
 // into the native Google Maps app on a phone.
@@ -1090,7 +1096,6 @@ async function handleTripImportFile(file) {
     return {
       date: parsedDate || "",
       dayLabel: parsedDate ? WEEKDAYS_HE[new Date(parsedDate + "T00:00:00").getDay()] : "",
-      title: "",
       // escaped, not inserted as-is: these fields are now rich-text HTML,
       // and imported cells are plain text that may itself contain "<"/">"/
       // "&" - escaping keeps it displaying exactly as extracted instead of
@@ -1163,7 +1168,6 @@ $("#trip-form-view").addEventListener("submit", async e => {
     days.push({
       date: toDateInputValue(d),
       dayLabel: WEEKDAYS_HE[d.getDay()],
-      title: "",
       morning: "",
       afternoon: "",
       evening: "",
@@ -1217,8 +1221,7 @@ function renderTripTable(days) {
     row.innerHTML = `
       <td class="col-date">
         <div class="date-cell-stack">
-          <input type="text" data-field="title" placeholder="כותרת (לא חובה)" value="${escapeHtml(day.title)}">
-          <input type="text" data-field="dayLabel" placeholder="יום" value="${escapeHtml(day.dayLabel)}">
+          <p class="date-cell-daylabel" data-role="daylabel">${escapeHtml(day.dayLabel)}</p>
           <input type="date" data-field="date" value="${escapeHtml(day.date)}">
         </div>
       </td>
@@ -1239,6 +1242,12 @@ function renderTripTable(days) {
       syncTableIntoCurrentTrip();
       state.currentTrip.days.splice(idx, 1);
       renderTripTable(state.currentTrip.days);
+    });
+    // The weekday label is derived from the date, not typed separately -
+    // picking a new date updates it immediately instead of leaving a
+    // mismatched label the user has to remember to fix by hand.
+    row.querySelector('[data-field="date"]').addEventListener("input", e => {
+      row.querySelector('[data-role="daylabel"]').textContent = dayLabelForDate(e.target.value);
     });
     row.querySelectorAll("[data-zoom-field]").forEach(btn => {
       const cell = btn.nextElementSibling;
@@ -1311,6 +1320,7 @@ function syncTableIntoCurrentTrip() {
       const raw = el.matches("[contenteditable]") ? el.innerHTML : el.value;
       day[el.dataset.field] = el.matches("[contenteditable]") ? sanitizeRichText(raw) : raw;
     });
+    day.dayLabel = dayLabelForDate(day.date);
   });
   state.currentTrip.name = $("#trip-detail-name-input").value.trim();
 }
@@ -1331,7 +1341,6 @@ $("#trip-add-day-btn").addEventListener("click", () => {
   days.push({
     date: toDateInputValue(nextDate),
     dayLabel: WEEKDAYS_HE[nextDate.getDay()],
-    title: "",
     morning: "",
     afternoon: "",
     evening: "",

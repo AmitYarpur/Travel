@@ -384,7 +384,6 @@ function cleanDay(d) {
   return {
     date: (d.date || "").trim(),
     dayLabel: (d.dayLabel || "").trim(),
-    title: (d.title || "").trim(),
     morning: sanitizeRichText(d.morning).trim(),
     afternoon: sanitizeRichText(d.afternoon).trim(),
     evening: sanitizeRichText(d.evening).trim(),
