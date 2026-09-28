@@ -210,10 +210,9 @@
             <thead>
               <tr>
                 <th>תאריך</th>
-                <th>יום</th>
-                <th>בוקר</th>
-                <th>צהריים</th>
-                <th>ערב</th>
+                <th>בוקר (עד 13:00)</th>
+                <th>אחה"צ (13:00-18:00)</th>
+                <th>ערב (18:00 ואילך)</th>
                 <th>לוגיסטיקה</th>
                 <th></th>
               </tr>
@@ -226,6 +225,20 @@
           <button type="button" class="primary-btn" id="trip-save-btn">שמירת שינויים</button>
         </div>
       </div>
+    </div>
+
+    <!-- Zoomed-in editor for a single trip-table cell, for comfortable
+         editing of longer content than the compact table cell allows. -->
+    <div class="cell-editor-backdrop" id="cell-editor-backdrop"></div>
+    <div class="cell-editor" id="cell-editor">
+      <div class="cell-editor-header">
+        <h3 id="cell-editor-title">עריכה</h3>
+        <button class="icon-btn" id="cell-editor-close-btn" aria-label="סגירה">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <textarea id="cell-editor-textarea"></textarea>
+      <button type="button" class="primary-btn" id="cell-editor-done-btn">סיום</button>
     </div>
 
     <div class="toast" id="toast"></div>

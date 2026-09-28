@@ -997,6 +997,7 @@ $("#trip-form-view").addEventListener("submit", async e => {
     days.push({
       date: toDateInputValue(d),
       dayLabel: WEEKDAYS_HE[d.getDay()],
+      title: "",
       morning: "",
       afternoon: "",
       evening: "",
@@ -1019,18 +1020,36 @@ $("#trip-form-view").addEventListener("submit", async e => {
   }
 });
 
+const ZOOM_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
+
+function partCell(field, value, label) {
+  return `
+    <td class="col-part part-cell">
+      <button type="button" class="cell-zoom-btn" data-zoom-field="${field}" data-zoom-label="${escapeHtml(label)}" aria-label="הגדלת עריכה">${ZOOM_ICON}</button>
+      <textarea data-field="${field}">${escapeHtml(value)}</textarea>
+    </td>`;
+}
+
 function renderTripTable(days) {
   const body = $("#trip-table-body");
   body.innerHTML = "";
   days.forEach((day, idx) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td class="col-date"><input type="date" data-field="date" value="${escapeHtml(day.date)}"></td>
-      <td class="col-day"><input type="text" data-field="dayLabel" value="${escapeHtml(day.dayLabel)}"></td>
-      <td class="col-part"><textarea data-field="morning">${escapeHtml(day.morning)}</textarea></td>
-      <td class="col-part"><textarea data-field="afternoon">${escapeHtml(day.afternoon)}</textarea></td>
-      <td class="col-part"><textarea data-field="evening">${escapeHtml(day.evening)}</textarea></td>
-      <td class="col-logistics"><textarea data-field="logistics">${escapeHtml(day.logistics)}</textarea></td>
+      <td class="col-date">
+        <div class="date-cell-stack">
+          <input type="text" data-field="title" placeholder="כותרת (לא חובה)" value="${escapeHtml(day.title)}">
+          <input type="text" data-field="dayLabel" placeholder="יום" value="${escapeHtml(day.dayLabel)}">
+          <input type="date" data-field="date" value="${escapeHtml(day.date)}">
+        </div>
+      </td>
+      ${partCell("morning", day.morning, "בוקר")}
+      ${partCell("afternoon", day.afternoon, 'אחה"צ')}
+      ${partCell("evening", day.evening, "ערב")}
+      <td class="col-logistics part-cell">
+        <button type="button" class="cell-zoom-btn" data-zoom-field="logistics" data-zoom-label="לוגיסטיקה" aria-label="הגדלת עריכה">${ZOOM_ICON}</button>
+        <textarea data-field="logistics">${escapeHtml(day.logistics)}</textarea>
+      </td>
       <td class="col-remove">
         <button type="button" class="icon-btn-ghost danger" data-action="remove-day" aria-label="הסרת יום">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
@@ -1042,9 +1061,39 @@ function renderTripTable(days) {
       state.currentTrip.days.splice(idx, 1);
       renderTripTable(state.currentTrip.days);
     });
+    row.querySelectorAll("[data-zoom-field]").forEach(btn => {
+      const textarea = btn.nextElementSibling;
+      btn.addEventListener("click", () => openCellEditor(textarea, `${btn.dataset.zoomLabel} - ${day.dayLabel || day.date || ""}`));
+    });
     body.appendChild(row);
   });
 }
+
+// --- Cell "zoom" editor: bigger textarea for comfortably editing a cell --
+
+let cellEditorTarget = null;
+
+function openCellEditor(textarea, label) {
+  cellEditorTarget = textarea;
+  $("#cell-editor-title").textContent = label.trim() || "עריכה";
+  $("#cell-editor-textarea").value = textarea.value;
+  $("#cell-editor").classList.add("open");
+  $("#cell-editor-backdrop").classList.add("visible");
+  $("#cell-editor-textarea").focus();
+}
+
+function closeCellEditor() {
+  if (cellEditorTarget) {
+    cellEditorTarget.value = $("#cell-editor-textarea").value;
+  }
+  cellEditorTarget = null;
+  $("#cell-editor").classList.remove("open");
+  $("#cell-editor-backdrop").classList.remove("visible");
+}
+
+$("#cell-editor-done-btn").addEventListener("click", closeCellEditor);
+$("#cell-editor-close-btn").addEventListener("click", closeCellEditor);
+$("#cell-editor-backdrop").addEventListener("click", closeCellEditor);
 
 function syncTableIntoCurrentTrip() {
   if (!state.currentTrip) return;
@@ -1075,6 +1124,7 @@ $("#trip-add-day-btn").addEventListener("click", () => {
   days.push({
     date: toDateInputValue(nextDate),
     dayLabel: WEEKDAYS_HE[nextDate.getDay()],
+    title: "",
     morning: "",
     afternoon: "",
     evening: "",

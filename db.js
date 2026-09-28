@@ -373,6 +373,7 @@ function cleanDay(d) {
   return {
     date: (d.date || "").trim(),
     dayLabel: (d.dayLabel || "").trim(),
+    title: (d.title || "").trim(),
     morning: (d.morning || "").trim(),
     afternoon: (d.afternoon || "").trim(),
     evening: (d.evening || "").trim(),

@@ -639,8 +639,7 @@ table.trip-table td {
   padding: 6px;
   vertical-align: top;
 }
-table.trip-table td.col-date { min-width: 118px; }
-table.trip-table td.col-day { min-width: 90px; }
+table.trip-table td.col-date { min-width: 148px; }
 table.trip-table td.col-part { min-width: 150px; }
 table.trip-table td.col-logistics { min-width: 150px; }
 table.trip-table td.col-remove { width: 36px; }
@@ -663,6 +662,97 @@ table.trip-table textarea:focus {
   background: var(--field-bg);
   outline: none;
 }
+
+.date-cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.date-cell-stack input[data-field="title"] {
+  font-weight: 700;
+  color: var(--accent-1);
+}
+.date-cell-stack input[data-field="dayLabel"] {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.part-cell {
+  position: relative;
+}
+.part-cell textarea { padding-left: 24px; }
+.cell-zoom-btn {
+  position: absolute;
+  top: 4px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+}
+.cell-zoom-btn:active { background: var(--ghost-btn-bg-active); }
+.cell-zoom-btn svg { width: 13px; height: 13px; }
+
+/* --- Cell "zoom" editor: a full-size editor for one table cell ---------- */
+
+.cell-editor-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 20, 18, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 800;
+}
+.cell-editor-backdrop.visible { opacity: 1; pointer-events: auto; }
+
+.cell-editor {
+  position: absolute;
+  right: 0; left: 0; bottom: 0;
+  z-index: 850;
+  min-height: 60vh;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+  transform: translateY(105%);
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.cell-editor.open { transform: translateY(0); }
+
+.cell-editor-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.cell-editor-header h3 { flex: 1; margin: 0; font-size: 17px; }
+.cell-editor-header .icon-btn { box-shadow: none; background: var(--ghost-btn-bg); }
+
+#cell-editor-textarea {
+  flex: 1;
+  width: 100%;
+  border: 1px solid var(--border-hairline);
+  background: var(--field-bg);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  resize: none;
+  margin-bottom: 12px;
+}
+#cell-editor-textarea:focus { border-color: var(--accent-1); outline: none; }
 
 .trip-actions-row {
   display: flex;
