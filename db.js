@@ -291,7 +291,8 @@ function placesCollection() {
 }
 
 // values: { locationId, name, category, lat, lng, notes }
-export async function addPlace(values) {
+// Shared by add and update - keeps their validation from drifting apart.
+function buildPlaceFields(values) {
   const name = values.name.trim();
   const notes = (values.notes || "").trim();
   if (!values.locationId) throw new Error("נא לבחור מיקום קודם.");
@@ -300,18 +301,31 @@ export async function addPlace(values) {
   if (typeof values.lat !== "number" || typeof values.lng !== "number") {
     throw new Error("לא הצלחנו לאתר את המקום על המפה. נסו שם מדויק יותר.");
   }
-
-  const ref = await withTimeout(addDoc(placesCollection(), {
+  return {
     locationId: values.locationId,
     name,
     category: values.category,
     lat: values.lat,
     lng: values.lng,
-    notes,
+    notes
+  };
+}
+
+export async function addPlace(values) {
+  const fields = buildPlaceFields(values);
+  const ref = await withTimeout(addDoc(placesCollection(), {
+    ...fields,
     createdAt: serverTimestamp(),
     createdAtLocal: new Date().toString()
   }), "place:add");
   return ref.id;
+}
+
+// Overwrites an existing place's editable fields (name, category, notes,
+// and its coordinates if the edit picked a new suggestion/link).
+export async function updatePlace(id, values) {
+  const fields = buildPlaceFields(values);
+  await withTimeout(updateDoc(doc(db, "places", id), fields), "place:update");
 }
 
 // Returns [{ id, locationId, name, category, lat, lng, notes, createdAt }]

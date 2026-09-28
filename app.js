@@ -2,7 +2,7 @@ import {
   PLACE_CATEGORIES,
   geocode, searchLocationSuggestions, searchPlaceSuggestions, parseGoogleMapsLink,
   addLocation, getLocations, deleteLocation,
-  addPlace, getPlacesByLocation, deletePlace,
+  addPlace, getPlacesByLocation, updatePlace, deletePlace,
   addTrip, getTripsByLocation, updateTrip, deleteTrip
 } from "./db.js";
 
@@ -606,12 +606,15 @@ function renderPlacesList() {
       <button class="icon-btn-ghost" aria-label="פתיחה ב-Google Maps" data-action="open-maps">
         ${OPEN_EXTERNAL_ICON}
       </button>
+      <button class="icon-btn-ghost" aria-label="עריכה" data-action="edit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
       <button class="icon-btn-ghost danger" aria-label="מחיקה" data-action="delete">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
       </button>
     `;
     card.addEventListener("click", e => {
-      if (e.target.closest('[data-action="delete"]') || e.target.closest('[data-action="open-maps"]')) return;
+      if (e.target.closest('[data-action="delete"]') || e.target.closest('[data-action="open-maps"]') || e.target.closest('[data-action="edit"]')) return;
       map.flyTo([p.lat, p.lng], 16);
       const marker = placeMarkerById.get(p.id);
       if (marker) setTimeout(() => marker.openPopup(), 400);
@@ -621,6 +624,7 @@ function renderPlacesList() {
     card.querySelector('[data-action="open-maps"]').addEventListener("click", () => {
       window.open(googleMapsUrl(p.lat, p.lng), "_blank", "noopener");
     });
+    card.querySelector('[data-action="edit"]').addEventListener("click", () => openEditPlaceForm(p));
     card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
       if (!confirm(`למחוק את "${p.name}"?`)) return;
       try {
@@ -669,8 +673,11 @@ $("#places-filter-input").addEventListener("input", e => {
   renderPlacesList();
 });
 
+let editingPlaceId = null; // set while place-form-view is editing an existing place instead of adding a new one
+
 $("#places-add-btn").addEventListener("click", () => {
   if (!state.selectedLocationId) return;
+  editingPlaceId = null;
   $("#place-form-error").classList.add("hidden");
   $("#place-name-input").value = "";
   $("#place-notes-input").value = "";
@@ -678,18 +685,34 @@ $("#places-add-btn").addEventListener("click", () => {
   currentPlaceSuggestions = [];
   renderPlaceSuggestions([]);
   buildPlaceCategoryPicker();
+  $("#place-form-submit").textContent = "הוספת מקום";
   showView("places", "form", "מקום חדש");
   $("#place-name-input").focus();
 });
 
-function buildPlaceCategoryPicker() {
+// Reuses the add-place form to edit an existing one: prefills its fields and
+// keeps its current coordinates unless the edit picks a new suggestion/link,
+// same as a fresh add would.
+function openEditPlaceForm(p) {
+  editingPlaceId = p.id;
+  $("#place-form-error").classList.add("hidden");
+  $("#place-name-input").value = p.name;
+  $("#place-notes-input").value = p.notes;
+  selectedPlaceGeo = { lat: p.lat, lng: p.lng };
+  currentPlaceSuggestions = [];
+  renderPlaceSuggestions([]);
+  buildPlaceCategoryPicker(p.category);
+  $("#place-form-submit").textContent = "שמירת שינויים";
+  showView("places", "form", "עריכת מקום");
+}
+
+function buildPlaceCategoryPicker(activeCategory) {
   const picker = $("#place-category-picker");
   picker.innerHTML = "";
-  let selected = null;
   PLACE_CATEGORIES.forEach(cat => {
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = "chip";
+    chip.className = "chip" + (cat === activeCategory ? " active" : "");
     chip.textContent = `${CATEGORY_EMOJI[cat]} ${cat}`;
     chip.dataset.category = cat;
     chip.addEventListener("click", () => {
@@ -819,26 +842,32 @@ $("#place-form-view").addEventListener("submit", async e => {
     return;
   }
 
+  const isEditing = !!editingPlaceId;
   submitBtn.disabled = true;
-  submitBtn.textContent = "מאתר במפה...";
+  submitBtn.textContent = isEditing ? "שומר..." : "מאתר במפה...";
   try {
     let geo = selectedPlaceGeo;
     if (!geo) {
       geo = await geocode(`${name}, ${loc.name}, ${loc.country}`);
     }
     if (!geo) throw new Error("לא נמצא מקום מתאים. נסו טקסט חיפוש מדויק יותר.");
-    await addPlace({ locationId: loc.id, name, category, lat: geo.lat, lng: geo.lng, notes });
+    if (isEditing) {
+      await updatePlace(editingPlaceId, { locationId: loc.id, name, category, lat: geo.lat, lng: geo.lng, notes });
+    } else {
+      await addPlace({ locationId: loc.id, name, category, lat: geo.lat, lng: geo.lng, notes });
+    }
     state.places = await getPlacesByLocation(loc.id);
     renderPlaceMarkers();
     refreshPlacesView();
     showView("places", "list");
-    toast("המקום נוסף!");
+    toast(isEditing ? "המקום עודכן!" : "המקום נוסף!");
+    editingPlaceId = null;
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.classList.remove("hidden");
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = "הוספת מקום";
+    submitBtn.textContent = isEditing ? "שמירת שינויים" : "הוספת מקום";
   }
 });
 
