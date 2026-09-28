@@ -482,7 +482,7 @@ $("#locations-add-btn").addEventListener("click", () => {
   currentLocationSuggestions = [];
   renderLocationSuggestions([]);
   showView("locations", "form", "מיקום חדש");
-  $("#location-search-input").focus();
+  $("#location-search-input").focus({ preventScroll: true });
 });
 
 // --- Location autosuggest: search-as-you-type against Nominatim ----------
@@ -708,7 +708,7 @@ $("#places-add-btn").addEventListener("click", () => {
   buildPlaceCategoryPicker();
   $("#place-form-submit").textContent = "הוספת מקום";
   showView("places", "form", "מקום חדש");
-  $("#place-name-input").focus();
+  $("#place-name-input").focus({ preventScroll: true });
 });
 
 // Reuses the add-place form to edit an existing one: prefills its fields and
@@ -1275,7 +1275,13 @@ function openCellEditor(textarea, label) {
   $("#cell-editor-textarea").value = textarea.value;
   $("#cell-editor").classList.add("open");
   $("#cell-editor-backdrop").classList.add("visible");
-  $("#cell-editor-textarea").focus();
+  // Focusing while the sheet is still mid slide-up transition (rather than
+  // settled in its final position) is what was making iOS Safari's own
+  // "scroll the focused element into view" logic fight with our fixed
+  // layout and reveal whatever sheet sits underneath - waiting past the
+  // 0.28s CSS transition, and telling it not to scroll at all regardless,
+  // avoids that entirely.
+  setTimeout(() => $("#cell-editor-textarea").focus({ preventScroll: true }), 320);
 }
 
 function closeCellEditor() {
