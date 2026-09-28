@@ -239,7 +239,19 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
         </button>
       </div>
-      <textarea id="cell-editor-textarea"></textarea>
+      <div class="cell-editor-toolbar" id="cell-editor-toolbar">
+        <button type="button" class="toolbar-btn" data-cmd="bold" aria-label="מודגש"><b>B</b></button>
+        <button type="button" class="toolbar-btn" data-cmd="underline" aria-label="קו תחתי"><u>U</u></button>
+        <button type="button" class="toolbar-btn" data-cmd="insertUnorderedList" aria-label="רשימת תבליטים">☰•</button>
+        <span class="toolbar-sep"></span>
+        <button type="button" class="toolbar-color" data-color="#12302a" style="background:#12302a" aria-label="שחור"></button>
+        <button type="button" class="toolbar-color" data-color="#c0392b" style="background:#c0392b" aria-label="אדום"></button>
+        <button type="button" class="toolbar-color" data-color="#e67e22" style="background:#e67e22" aria-label="כתום"></button>
+        <button type="button" class="toolbar-color" data-color="#27ae60" style="background:#27ae60" aria-label="ירוק"></button>
+        <button type="button" class="toolbar-color" data-color="#2980b9" style="background:#2980b9" aria-label="כחול"></button>
+        <button type="button" class="toolbar-color" data-color="#8e44ad" style="background:#8e44ad" aria-label="סגול"></button>
+      </div>
+      <div id="cell-editor-content" class="cell-editor-content" contenteditable="true"></div>
       <button type="button" class="primary-btn" id="cell-editor-done-btn">סיום</button>
     </div>
 
@@ -250,6 +262,7 @@
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="vendor/jszip.min.js"></script>
+  <script src="vendor/dompurify.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

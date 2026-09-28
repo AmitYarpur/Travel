@@ -669,7 +669,7 @@ table.trip-table td.col-logistics { min-width: 150px; }
 table.trip-table td.col-remove { width: 36px; }
 
 table.trip-table input,
-table.trip-table textarea {
+table.trip-table .cell-content {
   width: 100%;
   border: 1px solid transparent;
   background: transparent;
@@ -679,16 +679,14 @@ table.trip-table textarea {
   font-size: 16px; /* see the .field input rule above for why not smaller */
   min-height: 34px;
 }
-/* Cells auto-grow to fit their full content (see autoGrowTextarea in
-   app.js) instead of clipping long text behind a scrollbar or a manual
-   resize handle - so resize is turned off here, it'd just fight the
-   auto-sizing. */
-table.trip-table textarea {
-  resize: none;
-  overflow: hidden;
+/* A contenteditable div, not a textarea - it grows with its content by
+   normal block flow, no JS height management needed. */
+table.trip-table .cell-content {
+  line-height: 1.4;
 }
+table.trip-table .cell-content ul { margin: 2px 0; padding-inline-start: 18px; }
 table.trip-table input:focus,
-table.trip-table textarea:focus {
+table.trip-table .cell-content:focus {
   border-color: var(--accent-1);
   background: var(--field-bg);
   outline: none;
@@ -711,7 +709,7 @@ table.trip-table textarea:focus {
 .part-cell {
   position: relative;
 }
-.part-cell textarea { padding-left: 24px; }
+.part-cell .cell-content { padding-left: 24px; }
 .cell-zoom-btn {
   position: absolute;
   top: 4px;
@@ -770,9 +768,48 @@ table.trip-table textarea:focus {
 .cell-editor-header h3 { flex: 1; margin: 0; font-size: 17px; }
 .cell-editor-header .icon-btn { box-shadow: none; background: var(--ghost-btn-bg); }
 
-#cell-editor-textarea {
+.cell-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 10px;
+  flex-wrap: wrap;
+}
+.toolbar-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.toolbar-btn:active,
+.toolbar-btn.active { background: var(--accent-gradient); color: var(--text-on-accent); border-color: transparent; }
+.toolbar-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--border-hairline);
+  margin: 0 2px;
+}
+.toolbar-color {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--surface-solid);
+  box-shadow: 0 0 0 1px var(--border-hairline);
+  cursor: pointer;
+  padding: 0;
+}
+
+#cell-editor-content {
   flex: 1;
   width: 100%;
+  overflow-y: auto;
   border: 1px solid var(--border-hairline);
   background: var(--field-bg);
   color: var(--text-primary);
@@ -780,10 +817,11 @@ table.trip-table textarea:focus {
   padding: 12px;
   font-size: 16px; /* see the .field input rule above for why not smaller */
   font-family: inherit;
-  resize: none;
+  line-height: 1.5;
   margin-bottom: 12px;
 }
-#cell-editor-textarea:focus { border-color: var(--accent-1); outline: none; }
+#cell-editor-content:focus { border-color: var(--accent-1); outline: none; }
+#cell-editor-content ul { margin: 4px 0; padding-inline-start: 22px; }
 
 .trip-actions-row {
   display: flex;

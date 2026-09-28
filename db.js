@@ -369,15 +369,26 @@ function tripsCollection() {
   return collection(db, "trips");
 }
 
+// morning/afternoon/evening/logistics are rich text (bold/underline/color/
+// bullets), stored as HTML - sanitized here on the way in AND again in
+// getTripsByLocation on the way out. The read-side pass is the one that
+// actually matters for security: this is a no-login app anyone can write
+// to directly via the Firestore SDK/REST API, bypassing this function
+// entirely, so trusting "our own UI already cleaned it" isn't safe -
+// stored HTML has to be treated as untrusted right up until it's rendered.
+function sanitizeRichText(html) {
+  return window.DOMPurify ? window.DOMPurify.sanitize(html || "") : "";
+}
+
 function cleanDay(d) {
   return {
     date: (d.date || "").trim(),
     dayLabel: (d.dayLabel || "").trim(),
     title: (d.title || "").trim(),
-    morning: (d.morning || "").trim(),
-    afternoon: (d.afternoon || "").trim(),
-    evening: (d.evening || "").trim(),
-    logistics: (d.logistics || "").trim()
+    morning: sanitizeRichText(d.morning).trim(),
+    afternoon: sanitizeRichText(d.afternoon).trim(),
+    evening: sanitizeRichText(d.evening).trim(),
+    logistics: sanitizeRichText(d.logistics).trim()
   };
 }
 
@@ -411,7 +422,7 @@ export async function getTripsByLocation(locationId) {
       id: docSnap.id,
       locationId: data.locationId,
       name: data.name,
-      days: data.days || [],
+      days: (data.days || []).map(cleanDay), // re-sanitizes on every read - see cleanDay's comment
       createdAt: data.createdAt ? data.createdAt.toDate() : new Date(data.createdAtLocal)
     };
   });

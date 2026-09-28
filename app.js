@@ -1091,10 +1091,14 @@ async function handleTripImportFile(file) {
       date: parsedDate || "",
       dayLabel: parsedDate ? WEEKDAYS_HE[new Date(parsedDate + "T00:00:00").getDay()] : "",
       title: "",
-      morning: get("morning"),
-      afternoon: get("afternoon"),
-      evening: get("evening"),
-      logistics: get("logistics")
+      // escaped, not inserted as-is: these fields are now rich-text HTML,
+      // and imported cells are plain text that may itself contain "<"/">"/
+      // "&" - escaping keeps it displaying exactly as extracted instead of
+      // being misread as markup.
+      morning: escapeHtml(get("morning")),
+      afternoon: escapeHtml(get("afternoon")),
+      evening: escapeHtml(get("evening")),
+      logistics: escapeHtml(get("logistics"))
     };
   });
 
@@ -1184,34 +1188,24 @@ $("#trip-form-view").addEventListener("submit", async e => {
 
 const ZOOM_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
 
-// Grows a table-cell textarea to fit its full content so nothing is ever
-// clipped behind a tiny scrollbar - called on every keystroke (delegated
-// "input" listener below) and once per cell right after rendering, since
-// pre-filled content (an existing trip, or an imported file) needs the same
-// sizing without waiting for the user to type first.
-function autoGrowTextarea(el) {
-  el.style.height = "auto";
-  el.style.height = `${el.scrollHeight}px`;
+// Sanitizes rich-text HTML before it's ever inserted into the page - a
+// second line of defense on top of db.js's own read-time sanitization
+// (getTripsByLocation), in case anything ever reaches the DOM without going
+// through that (e.g. content just typed locally, not yet round-tripped
+// through Firestore). Fails closed (strips everything) if DOMPurify somehow
+// isn't loaded, rather than trusting unsanitized HTML.
+function sanitizeRichText(html) {
+  return window.DOMPurify ? window.DOMPurify.sanitize(html || "") : "";
 }
 
-$("#trip-table-body").addEventListener("input", e => {
-  if (e.target.tagName === "TEXTAREA") autoGrowTextarea(e.target);
-});
-
-// A rotation or window resize changes column widths, which can make a
-// previously-set height wrong again the same way the initial-render race
-// could - re-measure everything once things settle.
-function reflowTripTable() {
-  $("#trip-table-body").querySelectorAll("textarea").forEach(autoGrowTextarea);
-}
-window.addEventListener("resize", reflowTripTable);
-window.addEventListener("orientationchange", () => setTimeout(reflowTripTable, 300));
-
+// value is already-sanitized HTML (from db.js), not plain text - inserted
+// directly rather than through escapeHtml, which would show literal "<b>"
+// tags instead of rendering them.
 function partCell(field, value, label) {
   return `
     <td class="col-part part-cell">
       <button type="button" class="cell-zoom-btn" data-zoom-field="${field}" data-zoom-label="${escapeHtml(label)}" aria-label="הגדלת עריכה">${ZOOM_ICON}</button>
-      <textarea data-field="${field}">${escapeHtml(value)}</textarea>
+      <div class="cell-content" contenteditable="true" data-field="${field}">${sanitizeRichText(value)}</div>
     </td>`;
 }
 
@@ -1233,7 +1227,7 @@ function renderTripTable(days) {
       ${partCell("evening", day.evening, "ערב")}
       <td class="col-logistics part-cell">
         <button type="button" class="cell-zoom-btn" data-zoom-field="logistics" data-zoom-label="לוגיסטיקה" aria-label="הגדלת עריכה">${ZOOM_ICON}</button>
-        <textarea data-field="logistics">${escapeHtml(day.logistics)}</textarea>
+        <div class="cell-content" contenteditable="true" data-field="logistics">${sanitizeRichText(day.logistics)}</div>
       </td>
       <td class="col-remove">
         <button type="button" class="icon-btn-ghost danger" data-action="remove-day" aria-label="הסרת יום">
@@ -1247,32 +1241,22 @@ function renderTripTable(days) {
       renderTripTable(state.currentTrip.days);
     });
     row.querySelectorAll("[data-zoom-field]").forEach(btn => {
-      const textarea = btn.nextElementSibling;
-      btn.addEventListener("click", () => openCellEditor(textarea, `${btn.dataset.zoomLabel} - ${day.dayLabel || day.date || ""}`));
+      const cell = btn.nextElementSibling;
+      btn.addEventListener("click", () => openCellEditor(cell, `${btn.dataset.zoomLabel} - ${day.dayLabel || day.date || ""}`));
     });
     body.appendChild(row);
   });
-
-  // Auto-grow only after every row is in the DOM, not per-row during the
-  // loop above: with table-layout:auto the browser picks column widths from
-  // ALL rows' content together, so measuring a textarea's scrollHeight
-  // before later rows (which may need a different width) are even added
-  // locks in a height based on a width that then shifts under it - exactly
-  // what caused text to look clipped despite auto-grow "running".
-  // requestAnimationFrame waits for that layout to settle first.
-  requestAnimationFrame(() => {
-    body.querySelectorAll("textarea").forEach(autoGrowTextarea);
-  });
 }
 
-// --- Cell "zoom" editor: bigger textarea for comfortably editing a cell --
+// --- Cell "zoom" editor: bigger contenteditable area with a formatting
+// toolbar (bold/underline/bullets/color) for comfortably editing a cell --
 
 let cellEditorTarget = null;
 
-function openCellEditor(textarea, label) {
-  cellEditorTarget = textarea;
+function openCellEditor(cell, label) {
+  cellEditorTarget = cell;
   $("#cell-editor-title").textContent = label.trim() || "עריכה";
-  $("#cell-editor-textarea").value = textarea.value;
+  $("#cell-editor-content").innerHTML = sanitizeRichText(cell.innerHTML);
   $("#cell-editor").classList.add("open");
   $("#cell-editor-backdrop").classList.add("visible");
   // Focusing while the sheet is still mid slide-up transition (rather than
@@ -1281,13 +1265,12 @@ function openCellEditor(textarea, label) {
   // layout and reveal whatever sheet sits underneath - waiting past the
   // 0.28s CSS transition, and telling it not to scroll at all regardless,
   // avoids that entirely.
-  setTimeout(() => $("#cell-editor-textarea").focus({ preventScroll: true }), 320);
+  setTimeout(() => $("#cell-editor-content").focus({ preventScroll: true }), 320);
 }
 
 function closeCellEditor() {
   if (cellEditorTarget) {
-    cellEditorTarget.value = $("#cell-editor-textarea").value;
-    autoGrowTextarea(cellEditorTarget);
+    cellEditorTarget.innerHTML = sanitizeRichText($("#cell-editor-content").innerHTML);
   }
   cellEditorTarget = null;
   $("#cell-editor").classList.remove("open");
@@ -1298,14 +1281,35 @@ $("#cell-editor-done-btn").addEventListener("click", closeCellEditor);
 $("#cell-editor-close-btn").addEventListener("click", closeCellEditor);
 $("#cell-editor-backdrop").addEventListener("click", closeCellEditor);
 
+// Force modern CSS-based output (<span style="color:...">) instead of
+// legacy <font color> tags, so foreColor's result is consistent and
+// unambiguously covered by the sanitizer's allowed tags.
+document.execCommand("styleWithCSS", false, true);
+
+// mousedown+preventDefault (not click) keeps the contenteditable's current
+// text selection intact - a plain click on the button would first steal
+// focus away from the editor, collapsing the selection before the format
+// command ever runs.
+$("#cell-editor-toolbar").addEventListener("mousedown", e => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  e.preventDefault();
+  if (btn.dataset.cmd) {
+    document.execCommand(btn.dataset.cmd);
+  } else if (btn.dataset.color) {
+    document.execCommand("foreColor", false, btn.dataset.color);
+  }
+});
+
 function syncTableIntoCurrentTrip() {
   if (!state.currentTrip) return;
   const rows = $("#trip-table-body").querySelectorAll("tr");
   rows.forEach((row, idx) => {
     const day = state.currentTrip.days[idx];
     if (!day) return;
-    row.querySelectorAll("[data-field]").forEach(input => {
-      day[input.dataset.field] = input.value;
+    row.querySelectorAll("[data-field]").forEach(el => {
+      const raw = el.matches("[contenteditable]") ? el.innerHTML : el.value;
+      day[el.dataset.field] = el.matches("[contenteditable]") ? sanitizeRichText(raw) : raw;
     });
   });
   state.currentTrip.name = $("#trip-detail-name-input").value.trim();
