@@ -477,3 +477,66 @@ export async function getCategories() {
   docs.sort((a, b) => a.createdAt - b.createdAt);
   return docs.map(d => d.name);
 }
+
+// --- Route recording ---------------------------------------------------
+// One document per calendar day: { date: "YYYY-MM-DD", points: [{lat,lng,t}],
+// startedAt, endedAt }. The whole `points` array is overwritten together
+// while recording, same simple read-modify-write-the-whole-thing approach as
+// trips' `days` - a day's track (at most a few thousand points, given the
+// caller's min-distance/min-interval filtering) stays comfortably under
+// Firestore's 1MB document limit.
+
+function routesCollection() {
+  return collection(db, "routes");
+}
+
+export async function addRouteDay(date) {
+  const ref = await withTimeout(addDoc(routesCollection(), {
+    date,
+    points: [],
+    startedAt: serverTimestamp(),
+    startedAtLocal: new Date().toString(),
+    endedAt: null,
+    createdAt: serverTimestamp(),
+    createdAtLocal: new Date().toString()
+  }), "route:add");
+  return ref.id;
+}
+
+// points: [{ lat, lng, t }] - t is a plain epoch-ms number, not a Firestore
+// timestamp, since Firestore's serverTimestamp() sentinel isn't allowed
+// inside array elements.
+export async function updateRoutePoints(id, points) {
+  await withTimeout(updateDoc(doc(db, "routes", id), { points }), "route:update");
+}
+
+export async function finishRouteDay(id, points) {
+  await withTimeout(updateDoc(doc(db, "routes", id), {
+    points,
+    endedAt: serverTimestamp(),
+    endedAtLocal: new Date().toString()
+  }), "route:finish");
+}
+
+// Returns [{ id, date, points, startedAt, endedAt }] for every recorded day,
+// newest first. Sorted client-side after a plain fetch (no orderBy) so this
+// never needs a Firestore composite index.
+export async function getRouteDays() {
+  const snap = await withTimeout(getDocs(routesCollection()), "route:list");
+  const days = snap.docs.map(docSnap => {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      date: data.date,
+      points: data.points || [],
+      startedAt: data.startedAt ? data.startedAt.toDate() : new Date(data.startedAtLocal),
+      endedAt: data.endedAt ? data.endedAt.toDate() : (data.endedAtLocal ? new Date(data.endedAtLocal) : null)
+    };
+  });
+  days.sort((a, b) => b.date.localeCompare(a.date) || b.startedAt - a.startedAt);
+  return days;
+}
+
+export async function deleteRouteDay(id) {
+  await withTimeout(deleteDoc(doc(db, "routes", id)), "route:delete");
+}

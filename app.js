@@ -4,7 +4,8 @@ import {
   addLocation, getLocations, deleteLocation,
   addPlace, getPlacesByLocation, updatePlace, deletePlace,
   addTrip, getTripsByLocation, updateTrip, deleteTrip,
-  addCategory, getCategories
+  addCategory, getCategories,
+  addRouteDay, updateRoutePoints, finishRouteDay, getRouteDays, deleteRouteDay
 } from "./db.js";
 
 const $ = sel => document.querySelector(sel);
@@ -70,7 +71,10 @@ const state = {
   customCategories: [], // user-added categories on top of the PLACE_CATEGORIES built-ins
   currentTrip: null, // deep-cloned trip being edited in the detail view
   userPos: null, // { lat, lng } from the most recent geolocation fix
-  walkingInfo: {} // placeId -> { minutes, meters }, from OSRM's foot-routing table
+  walkingInfo: {}, // placeId -> { minutes, meters }, from OSRM's foot-routing table
+  routeDays: [], // every recorded day, newest first - see "Route recording" below
+  selectedRouteDayOrder: [], // ids of route days shown on the map, in selection order (picks each one's color)
+  recording: null // { routeId, date, points, startedAtMs, lastSavedCount } while a route is being recorded, else null
 };
 
 function allCategories() {
@@ -126,15 +130,25 @@ setTimeout(() => map.invalidateSize(), 300);
 window.addEventListener("resize", () => map.invalidateSize());
 window.addEventListener("orientationchange", () => setTimeout(() => map.invalidateSize(), 300));
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) map.invalidateSize();
+  if (!document.hidden) {
+    map.invalidateSize();
+    // the page may have been backgrounded/suspended past midnight without
+    // the setTimeout/setInterval below ever getting to run - catch that up
+    // as soon as we're foregrounded again instead of waiting on them.
+    if (state.recording) checkRecordingDateRollover();
+  } else if (state.recording) {
+    flushRecordingPoints();
+  }
 });
 
 const placeMarkersLayer = L.layerGroup().addTo(map);
 const placeMarkerById = new Map();
+const recordedRoutesLayer = L.layerGroup().addTo(map); // finalized/selected route-recording polylines
 
 let userMarker = null;
 let locationMarker = null;
 let routeLayer = null;
+let liveRecordingLayer = null; // the growing polyline while a recording is in progress
 
 function emojiIcon(emoji, size) {
   return L.divIcon({
@@ -304,6 +318,17 @@ const SHEETS = {
     navBtn: $("#nav-trips-btn"),
     views: { list: $("#trips-list-view"), form: $("#trip-form-view"), detail: $("#trip-detail-view") },
     currentView: "list"
+  },
+  routes: {
+    el: $("#routes-sheet"),
+    title: $("#routes-title"),
+    defaultTitle: "הקלטת מסלול",
+    backBtn: null, // single-view sheet - no back/add buttons in its header
+    addBtn: null,
+    closeBtn: $("#routes-close-btn"),
+    navBtn: $("#nav-routes-btn"),
+    views: { list: $("#routes-list-view") },
+    currentView: "list"
   }
 };
 
@@ -312,8 +337,8 @@ function showView(key, viewName, title) {
   Object.entries(s.views).forEach(([name, el]) => el.classList.toggle("hidden", name !== viewName));
   s.currentView = viewName;
   s.title.textContent = title || s.defaultTitle;
-  s.backBtn.classList.toggle("hidden", viewName === "list");
-  s.addBtn.classList.toggle("hidden", viewName !== "list");
+  if (s.backBtn) s.backBtn.classList.toggle("hidden", viewName === "list");
+  if (s.addBtn) s.addBtn.classList.toggle("hidden", viewName !== "list");
 }
 
 function closeSheet(key) {
@@ -338,6 +363,7 @@ function openSheet(key) {
   if (key === "locations") renderLocationsList();
   if (key === "places") refreshPlacesView();
   if (key === "trips") refreshTripsView();
+  if (key === "routes") { updateRecordUi(); loadRouteDays(); }
 }
 
 function toggleSheet(key) {
@@ -1407,6 +1433,331 @@ $("#trip-delete-btn").addEventListener("click", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Route recording
+// ---------------------------------------------------------------------------
+// Records the phone's GPS track for "today" into one Firestore document per
+// calendar day (see addRouteDay/updateRoutePoints/finishRouteDay in db.js).
+// A recording always ends by local midnight - either the user stops it, the
+// scheduled midnight timeout fires, or (if the page was asleep/closed right
+// through midnight) the periodic date-rollover check or the resume-on-load
+// check below catches it after the fact. Nothing auto-starts a new
+// recording for the next day - that always needs a fresh tap.
+
+const ROUTE_COLORS = ["#1f7a6c", "#e0a458", "#c0533f", "#2b7de9", "#8e44ad", "#16a34a", "#d946ef", "#0891b2"];
+const MIN_POINT_DISTANCE_M = 10; // skip a new GPS fix closer than this...
+const MIN_POINT_INTERVAL_MS = 15000; // ...unless this much time passed anyway (keeps dwell time visible)
+const RECORDING_STORAGE_KEY = "travel_recording";
+
+function colorForRouteDay(id) {
+  const idx = state.selectedRouteDayOrder.indexOf(id);
+  return ROUTE_COLORS[idx % ROUTE_COLORS.length];
+}
+
+function haversineMeters(a, b) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const h = sinLat * sinLat + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLng * sinLng;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function routeDayStats(day) {
+  let meters = 0;
+  for (let i = 1; i < day.points.length; i++) meters += haversineMeters(day.points[i - 1], day.points[i]);
+  const durationMs = day.points.length >= 2 ? (day.points[day.points.length - 1].t - day.points[0].t) : 0;
+  return { meters, durationMs };
+}
+
+function formatDistanceKm(meters) {
+  return meters >= 1000 ? `${(meters / 1000).toFixed(1)} ק"מ` : `${Math.round(meters)} מ'`;
+}
+
+function formatDurationHm(ms) {
+  const totalMinutes = Math.round(ms / 60000);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return h > 0 ? `${h} שע' ${m} דק'` : `${m} דק'`;
+}
+
+function formatElapsed(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const pad = n => String(n).padStart(2, "0");
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+function formatRouteDayLabel(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  return isNaN(d) ? dateStr : `${formatDateHe(dateStr)} · ${WEEKDAYS_HE[d.getDay()]}`;
+}
+
+function msUntilNextMidnight() {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  return next - now;
+}
+
+function persistRecordingFlag() {
+  if (!state.recording) {
+    localStorage.removeItem(RECORDING_STORAGE_KEY);
+  } else {
+    localStorage.setItem(RECORDING_STORAGE_KEY, JSON.stringify({
+      routeId: state.recording.routeId,
+      date: state.recording.date
+    }));
+  }
+}
+
+function updateRecordUi() {
+  const recording = !!state.recording;
+  $("#route-record-btn").classList.toggle("recording", recording);
+  $("#route-record-label").textContent = recording ? "עצירת הקלטה" : "התחלת הקלטה";
+  $("#route-record-stats").classList.toggle("hidden", !recording);
+  if (recording) {
+    const { meters } = routeDayStats({ points: state.recording.points });
+    const elapsedMs = Date.now() - state.recording.startedAtMs;
+    $("#route-record-stats").textContent = `מקליט · ${formatElapsed(elapsedMs)} · ${formatDistanceKm(meters)}`;
+  }
+}
+
+function renderRoutesList() {
+  const list = $("#routes-days-list");
+  list.innerHTML = "";
+  $("#routes-empty").classList.toggle("hidden", state.routeDays.length > 0);
+
+  state.routeDays.forEach(day => {
+    const selected = state.selectedRouteDayOrder.includes(day.id);
+    const color = selected ? colorForRouteDay(day.id) : null;
+    const { meters, durationMs } = routeDayStats(day);
+    const card = document.createElement("div");
+    card.className = "item-card route-day-card" + (selected ? " selected" : "");
+    card.innerHTML = `
+      <button type="button" class="route-day-swatch" style="background:${color || ""}" aria-label="הצגה/הסתרה במפה">${selected ? "✓" : ""}</button>
+      <div class="item-text">
+        <p class="item-title">${escapeHtml(formatRouteDayLabel(day.date))}</p>
+        <p class="item-subtitle">${escapeHtml(formatDistanceKm(meters))} · ${escapeHtml(formatDurationHm(durationMs))}${day.endedAt ? "" : " · מוקלט כרגע"}</p>
+      </div>
+      <button class="icon-btn-ghost danger" aria-label="מחיקה" data-action="delete">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+      </button>
+    `;
+    card.addEventListener("click", e => {
+      if (e.target.closest('[data-action="delete"]')) return;
+      toggleRouteDaySelection(day.id);
+    });
+    card.querySelector('[data-action="delete"]').addEventListener("click", async () => {
+      if (!confirm("למחוק את המסלול המוקלט ליום הזה?")) return;
+      try {
+        await deleteRouteDay(day.id);
+        state.routeDays = state.routeDays.filter(d => d.id !== day.id);
+        state.selectedRouteDayOrder = state.selectedRouteDayOrder.filter(id => id !== day.id);
+        renderRoutesList();
+        renderSelectedRoutesOnMap(false);
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    list.appendChild(card);
+  });
+}
+
+function toggleRouteDaySelection(id) {
+  const idx = state.selectedRouteDayOrder.indexOf(id);
+  if (idx === -1) state.selectedRouteDayOrder.push(id);
+  else state.selectedRouteDayOrder.splice(idx, 1);
+  renderRoutesList();
+  renderSelectedRoutesOnMap(true);
+}
+
+function renderSelectedRoutesOnMap(fit) {
+  recordedRoutesLayer.clearLayers();
+  state.selectedRouteDayOrder.forEach(id => {
+    const day = state.routeDays.find(d => d.id === id);
+    if (!day || day.points.length < 2) return;
+    const latlngs = day.points.map(p => [p.lat, p.lng]);
+    L.polyline(latlngs, { color: colorForRouteDay(id), weight: 5, opacity: 0.85, lineCap: "round" }).addTo(recordedRoutesLayer);
+  });
+  if (fit && state.selectedRouteDayOrder.length) {
+    const bounds = recordedRoutesLayer.getBounds();
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [60, 60] });
+  }
+}
+
+async function loadRouteDays() {
+  try {
+    state.routeDays = await getRouteDays();
+  } catch (err) {
+    toast(err.message);
+    return;
+  }
+  renderRoutesList();
+  renderSelectedRoutesOnMap(false);
+}
+
+// --- Recording engine ------------------------------------------------------
+
+let watchId = null;
+let midnightTimer = null;
+let dateRollCheckInterval = null;
+let recordUiTimer = null;
+let recordingErrorToasted = false;
+let flushInFlight = false;
+
+function handleRecordingPosition(pos) {
+  if (!state.recording) return;
+  const point = { lat: pos.coords.latitude, lng: pos.coords.longitude, t: Date.now() };
+  const points = state.recording.points;
+  const last = points[points.length - 1];
+  if (last) {
+    const dist = haversineMeters(last, point);
+    const dt = point.t - last.t;
+    if (dist < MIN_POINT_DISTANCE_M && dt < MIN_POINT_INTERVAL_MS) return;
+  }
+  points.push(point);
+  if (liveRecordingLayer) liveRecordingLayer.addLatLng([point.lat, point.lng]);
+  if (points.length - state.recording.lastSavedCount >= 15) flushRecordingPoints();
+}
+
+function handleRecordingError() {
+  if (recordingErrorToasted) return;
+  recordingErrorToasted = true;
+  toast("לא ניתן לאתר את המיקום - בדקו הרשאות מיקום בדפדפן");
+}
+
+async function flushRecordingPoints() {
+  if (!state.recording || flushInFlight) return;
+  flushInFlight = true;
+  const snapshot = state.recording.points.slice();
+  try {
+    await updateRoutePoints(state.recording.routeId, snapshot);
+    if (state.recording) state.recording.lastSavedCount = snapshot.length;
+  } catch (err) {
+    // best-effort - the next periodic flush (or the final one on stop) retries with the fuller array
+  } finally {
+    flushInFlight = false;
+  }
+}
+
+function checkRecordingDateRollover() {
+  if (!state.recording) return;
+  if (toDateInputValue(new Date()) !== state.recording.date) stopRecording(true);
+}
+
+function armRecordingTimers() {
+  clearTimeout(midnightTimer);
+  midnightTimer = setTimeout(() => stopRecording(true), msUntilNextMidnight());
+  clearInterval(dateRollCheckInterval);
+  dateRollCheckInterval = setInterval(checkRecordingDateRollover, 60000);
+  clearInterval(recordUiTimer);
+  recordUiTimer = setInterval(updateRecordUi, 1000);
+}
+
+function disarmRecordingTimers() {
+  clearTimeout(midnightTimer); midnightTimer = null;
+  clearInterval(dateRollCheckInterval); dateRollCheckInterval = null;
+  clearInterval(recordUiTimer); recordUiTimer = null;
+}
+
+async function startRecording() {
+  if (!("geolocation" in navigator)) { toast("הדפדפן לא תומך באיתור מיקום"); return; }
+  if (state.recording) return;
+
+  const today = toDateInputValue(new Date());
+  let routeId;
+  try {
+    routeId = await addRouteDay(today);
+  } catch (err) {
+    toast(err.message);
+    return;
+  }
+
+  recordingErrorToasted = false;
+  state.recording = { routeId, date: today, points: [], startedAtMs: Date.now(), lastSavedCount: 0 };
+  persistRecordingFlag();
+
+  liveRecordingLayer = L.polyline([], { color: "#c0533f", weight: 5, opacity: 0.9, lineCap: "round" }).addTo(map);
+  watchId = navigator.geolocation.watchPosition(handleRecordingPosition, handleRecordingError, {
+    enableHighAccuracy: true, maximumAge: 5000, timeout: 20000
+  });
+  armRecordingTimers();
+
+  updateRecordUi();
+  renderRoutesList();
+  toast("הקלטת המסלול התחילה");
+}
+
+async function stopRecording(auto) {
+  if (!state.recording) return;
+  const { routeId, points } = state.recording;
+
+  if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  disarmRecordingTimers();
+  if (liveRecordingLayer) { map.removeLayer(liveRecordingLayer); liveRecordingLayer = null; }
+
+  state.recording = null;
+  persistRecordingFlag();
+  updateRecordUi();
+
+  try {
+    await finishRouteDay(routeId, points);
+  } catch (err) {
+    toast(err.message);
+  }
+
+  await loadRouteDays();
+  toast(auto ? "ההקלטה הסתיימה אוטומטית בסוף היום" : "המסלול נשמר!");
+}
+
+$("#route-record-btn").addEventListener("click", () => {
+  if (state.recording) stopRecording(false);
+  else startRecording();
+});
+
+// Picks up an in-progress recording after a page reload (the user re-opened
+// the PWA, or it was relaunched) instead of silently losing it. If the
+// stored day has already rolled past midnight while the page was away, it's
+// finalized right away rather than resumed.
+function resumeRecordingIfNeeded() {
+  const raw = localStorage.getItem(RECORDING_STORAGE_KEY);
+  if (!raw) return;
+  let saved;
+  try { saved = JSON.parse(raw); } catch (e) { localStorage.removeItem(RECORDING_STORAGE_KEY); return; }
+
+  const day = state.routeDays.find(d => d.id === saved.routeId);
+  if (!day) { localStorage.removeItem(RECORDING_STORAGE_KEY); return; }
+
+  const today = toDateInputValue(new Date());
+  if (day.date !== today || day.endedAt) {
+    if (!day.endedAt) finishRouteDay(day.id, day.points).catch(() => {});
+    localStorage.removeItem(RECORDING_STORAGE_KEY);
+    return;
+  }
+
+  recordingErrorToasted = false;
+  state.recording = {
+    routeId: day.id,
+    date: day.date,
+    points: day.points.slice(),
+    startedAtMs: day.startedAt.getTime(),
+    lastSavedCount: day.points.length
+  };
+  liveRecordingLayer = L.polyline(day.points.map(p => [p.lat, p.lng]), {
+    color: "#c0533f", weight: 5, opacity: 0.9, lineCap: "round"
+  }).addTo(map);
+  watchId = navigator.geolocation.watchPosition(handleRecordingPosition, handleRecordingError, {
+    enableHighAccuracy: true, maximumAge: 5000, timeout: 20000
+  });
+  armRecordingTimers();
+  updateRecordUi();
+  toast("ממשיכים בהקלטת המסלול מהיום");
+}
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
@@ -1425,6 +1776,13 @@ $("#trip-delete-btn").addEventListener("click", async () => {
   } catch (err) {
     state.customCategories = []; // best-effort - the built-in categories still work fine without these
   }
+
+  try {
+    state.routeDays = await getRouteDays();
+  } catch (err) {
+    state.routeDays = [];
+  }
+  resumeRecordingIfNeeded();
 
   if (state.selectedLocationId && state.locations.some(l => l.id === state.selectedLocationId)) {
     await selectLocation(state.selectedLocationId, { skipFly: false });

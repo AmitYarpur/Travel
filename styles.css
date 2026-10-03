@@ -846,6 +846,78 @@ table.trip-table .cell-content:focus {
   margin-bottom: 12px;
 }
 
+/* --- Route recording ----------------------------------------------------- */
+
+.record-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: none;
+  background: var(--accent-gradient);
+  color: var(--text-on-accent);
+  padding: 15px;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: var(--shadow-accent-glow);
+  margin-bottom: 8px;
+}
+.record-btn.recording {
+  background: var(--accent-danger);
+  box-shadow: 0 10px 20px -8px rgba(192, 83, 63, 0.45);
+}
+.record-btn-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.record-btn.recording .record-btn-dot {
+  animation: route-rec-pulse 1.2s ease-in-out infinite;
+}
+@keyframes route-rec-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.65); }
+}
+
+.record-stats {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0 0 18px;
+}
+.record-stats.hidden { display: none; }
+
+.routes-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin: 2px 0 10px;
+}
+
+.route-day-card { cursor: pointer; }
+
+.route-day-swatch {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: none;
+  cursor: pointer;
+  background: var(--surface-wash-strong);
+  color: var(--text-on-accent);
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* --- Toast (lightweight status messages) --------------------------------- */
 
 .toast {
