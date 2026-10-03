@@ -363,7 +363,7 @@ function openSheet(key) {
   if (key === "locations") renderLocationsList();
   if (key === "places") refreshPlacesView();
   if (key === "trips") refreshTripsView();
-  if (key === "routes") { updateRecordUi(); loadRouteDays(); }
+  if (key === "routes") { updateRecordUi(); refreshRoutesView(); }
 }
 
 function toggleSheet(key) {
@@ -501,6 +501,15 @@ async function selectLocation(id, opts) {
     toast(err.message);
   }
   if (SHEETS.trips.el.classList.contains("open")) refreshTripsView();
+
+  // Recorded routes belong to whichever destination was selected when
+  // recording started - switching destinations clears the ones shown on the
+  // map and reloads the list scoped to the new one (lazily, next time the
+  // sheet is opened, same as places/trips not refetching until needed).
+  state.selectedRouteDayOrder = [];
+  state.routeDays = [];
+  recordedRoutesLayer.clearLayers();
+  if (SHEETS.routes.el.classList.contains("open")) refreshRoutesView();
 }
 
 $("#locations-filter-input").addEventListener("input", e => {
@@ -1588,9 +1597,18 @@ function renderSelectedRoutesOnMap(fit) {
   }
 }
 
+function refreshRoutesView() {
+  const hasLocation = !!state.selectedLocationId;
+  $("#routes-no-location").classList.toggle("hidden", hasLocation);
+  $("#routes-content").classList.toggle("hidden", !hasLocation);
+  if (hasLocation) loadRouteDays();
+}
+
+$("#routes-go-to-locations-btn").addEventListener("click", () => openSheet("locations"));
+
 async function loadRouteDays() {
   try {
-    state.routeDays = await getRouteDays();
+    state.routeDays = await getRouteDays(state.selectedLocationId);
   } catch (err) {
     toast(err.message);
     return;
@@ -1667,17 +1685,21 @@ async function startRecording() {
   if (!("geolocation" in navigator)) { toast("הדפדפן לא תומך באיתור מיקום"); return; }
   if (state.recording) return;
 
+  const loc = state.locations.find(l => l.id === state.selectedLocationId);
+  if (!loc) { toast("בחרו קודם מיקום"); return; }
+  if (!confirm(`המסלול המוקלט יתווסף ליעד "${loc.name}, ${loc.country}". להתחיל בהקלטה?`)) return;
+
   const today = toDateInputValue(new Date());
   let routeId;
   try {
-    routeId = await addRouteDay(today);
+    routeId = await addRouteDay(loc.id, today);
   } catch (err) {
     toast(err.message);
     return;
   }
 
   recordingErrorToasted = false;
-  state.recording = { routeId, date: today, points: [], startedAtMs: Date.now(), lastSavedCount: 0 };
+  state.recording = { routeId, date: today, locationId: loc.id, points: [], startedAtMs: Date.now(), lastSavedCount: 0 };
   persistRecordingFlag();
 
   liveRecordingLayer = L.polyline([], { color: "#c0533f", weight: 5, opacity: 0.9, lineCap: "round" }).addTo(map);
@@ -1722,13 +1744,13 @@ $("#route-record-btn").addEventListener("click", () => {
 // the PWA, or it was relaunched) instead of silently losing it. If the
 // stored day has already rolled past midnight while the page was away, it's
 // finalized right away rather than resumed.
-function resumeRecordingIfNeeded() {
+function resumeRecordingIfNeeded(allDays) {
   const raw = localStorage.getItem(RECORDING_STORAGE_KEY);
   if (!raw) return;
   let saved;
   try { saved = JSON.parse(raw); } catch (e) { localStorage.removeItem(RECORDING_STORAGE_KEY); return; }
 
-  const day = state.routeDays.find(d => d.id === saved.routeId);
+  const day = allDays.find(d => d.id === saved.routeId);
   if (!day) { localStorage.removeItem(RECORDING_STORAGE_KEY); return; }
 
   const today = toDateInputValue(new Date());
@@ -1742,6 +1764,7 @@ function resumeRecordingIfNeeded() {
   state.recording = {
     routeId: day.id,
     date: day.date,
+    locationId: day.locationId,
     points: day.points.slice(),
     startedAtMs: day.startedAt.getTime(),
     lastSavedCount: day.points.length
@@ -1778,11 +1801,10 @@ function resumeRecordingIfNeeded() {
   }
 
   try {
-    state.routeDays = await getRouteDays();
+    resumeRecordingIfNeeded(await getRouteDays()); // unscoped: a recording might be mid-flight for a destination not currently selected
   } catch (err) {
-    state.routeDays = [];
+    // best-effort - if this fails, the recording (if any) just resumes manually via the record button
   }
-  resumeRecordingIfNeeded();
 
   if (state.selectedLocationId && state.locations.some(l => l.id === state.selectedLocationId)) {
     await selectLocation(state.selectedLocationId, { skipFly: false });

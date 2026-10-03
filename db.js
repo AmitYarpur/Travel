@@ -490,8 +490,10 @@ function routesCollection() {
   return collection(db, "routes");
 }
 
-export async function addRouteDay(date) {
+export async function addRouteDay(locationId, date) {
+  if (!locationId) throw new Error("נא לבחור מיקום קודם.");
   const ref = await withTimeout(addDoc(routesCollection(), {
+    locationId,
     date,
     points: [],
     startedAt: serverTimestamp(),
@@ -518,15 +520,20 @@ export async function finishRouteDay(id, points) {
   }), "route:finish");
 }
 
-// Returns [{ id, date, points, startedAt, endedAt }] for every recorded day,
-// newest first. Sorted client-side after a plain fetch (no orderBy) so this
-// never needs a Firestore composite index.
-export async function getRouteDays() {
-  const snap = await withTimeout(getDocs(routesCollection()), "route:list");
+// Returns [{ id, locationId, date, points, startedAt, endedAt }], newest
+// first. With a locationId it's scoped to that destination (plain equality
+// query, no orderBy, so this never needs a Firestore composite index);
+// without one it returns every recorded day regardless of destination -
+// used at app startup to find and resume/close an in-progress recording
+// before a destination is necessarily selected yet.
+export async function getRouteDays(locationId) {
+  const target = locationId ? query(routesCollection(), where("locationId", "==", locationId)) : routesCollection();
+  const snap = await withTimeout(getDocs(target), "route:list");
   const days = snap.docs.map(docSnap => {
     const data = docSnap.data();
     return {
       id: docSnap.id,
+      locationId: data.locationId,
       date: data.date,
       points: data.points || [],
       startedAt: data.startedAt ? data.startedAt.toDate() : new Date(data.startedAtLocal),

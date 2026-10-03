@@ -247,15 +247,21 @@
       </div>
 
       <div class="sheet-body" id="routes-list-view">
-        <button type="button" class="record-btn" id="route-record-btn">
-          <span class="record-btn-dot"></span>
-          <span id="route-record-label">התחלת הקלטה</span>
-        </button>
-        <p class="record-stats hidden" id="route-record-stats"></p>
+        <div id="routes-no-location" class="empty-hint hidden">
+          בחרו קודם מיקום כדי להקליט ולצפות במסלולים.
+          <button class="hint-action" id="routes-go-to-locations-btn" type="button">מעבר לבחירת מיקום</button>
+        </div>
+        <div id="routes-content">
+          <button type="button" class="record-btn" id="route-record-btn">
+            <span class="record-btn-dot"></span>
+            <span id="route-record-label">התחלת הקלטה</span>
+          </button>
+          <p class="record-stats hidden" id="route-record-stats"></p>
 
-        <div class="routes-section-title">ימים שהוקלטו</div>
-        <div id="routes-days-list" class="item-list"></div>
-        <div id="routes-empty" class="empty-hint">עדיין לא הוקלט אף מסלול.<br>לחצו על "התחלת הקלטה" כדי להתחיל לתעד את המסלול שלכם. ההקלטה תיסגר אוטומטית בסוף היום (23:59) אם לא תיעצרו אותה קודם.</div>
+          <div class="routes-section-title">ימים שהוקלטו</div>
+          <div id="routes-days-list" class="item-list"></div>
+          <div id="routes-empty" class="empty-hint">עדיין לא הוקלט אף מסלול ליעד הזה.<br>לחצו על "התחלת הקלטה" כדי להתחיל לתעד את המסלול שלכם. ההקלטה תיסגר אוטומטית בסוף היום (23:59) אם לא תיעצרו אותה קודם.</div>
+        </div>
       </div>
     </div>
 

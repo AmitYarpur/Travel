@@ -56,7 +56,9 @@ service cloud.firestore {
 
     match /routes/{routeId} {
       allow read: if true;
-      allow create, update: if request.resource.data.date is string
+      allow create, update: if request.resource.data.locationId is string
+                    && request.resource.data.locationId.size() > 0
+                    && request.resource.data.date is string
                     && request.resource.data.date.size() > 0
                     && request.resource.data.date.size() < 20
                     && request.resource.data.points is list
